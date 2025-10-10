@@ -94,3 +94,34 @@ model SchemaVersion {
   @@unique([schemaId, version])
   @@map("schema_versions")
 }
+
+model RagDoc {
+  id        Int      @id @default(autoincrement())
+  text      String
+  payload   Json
+  embedding String?
+  createdAt DateTime @default(now())
+
+  @@map("rag_docs")
+}
+
+model ChatSession {
+  id        Int      @id @default(autoincrement())
+  sessionId String
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  sessionId String
+  role      String
+  content   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@map("chat_messages")
+}

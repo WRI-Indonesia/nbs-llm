@@ -20,6 +20,7 @@ export type TableNodeData = {
   table: string;
   description?: string;
   columns: Column[];
+  data?: any[]; // Actual data rows for the table
   reservedTableNames?: string[];
   onEditColumns?: (nodeId: string, nextCols: Column[]) => void;
   onEditTableMeta?: (nodeId: string, next: { table: string; description?: string }) => void;
@@ -35,7 +36,7 @@ export type Catalog = {
 // Chat message types
 export type ChatMessage =
   | { id: string; role: "user"; text: string; createdAt: number }
-  | { id: string; role: "assistant"; text?: string; createdAt: number }
+  | { id: string; role: "assistant"; text?: string; createdAt: number; data?: any }
   | { id: string; role: "error"; text: string; createdAt: number };
 
 // Version history

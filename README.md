@@ -15,7 +15,7 @@ A modern, visual database schema designer built with Next.js and Prisma. Design 
 - 💾 **Dual Storage Modes** - Choose between local storage or database persistence
 - 🗄️ **Prisma Integration** - Direct sync with PostgreSQL, MySQL, or SQLite
 - 📦 **Version Control** - Built-in schema version history
-- 🤖 **AI Assistant** - Get help with your schema design (demo mode included)
+- 🤖 **AI Assistant** - Ask questions about your schema and get SQL queries generated automatically
 - ⚡ **Auto-save** - Never lose your work
 - 🎯 **Auto-layout** - Dagre algorithm for optimal node positioning
 
@@ -74,6 +74,28 @@ npm run dev
 
 3. **Toggle to database mode** in the playground (top-left button)
 
+### AI Assistant Setup (Optional)
+
+To enable the AI assistant for SQL generation:
+
+1. **Get OpenAI API Key:**
+   - Sign up at [OpenAI](https://platform.openai.com/)
+   - Create an API key
+
+2. **Add Environment Variables:**
+```bash
+echo 'OPENAI_API_KEY="your_openai_api_key_here"' >> .env
+echo 'EMBED_MODEL_NAME="text-embedding-3-large"' >> .env
+echo 'CHAT_MODEL="gpt-4o-mini"' >> .env
+```
+
+3. **Restart the development server:**
+```bash
+npm run dev
+```
+
+4. **Click "Ask AI" in the playground** - the AI will automatically index your schema and answer questions!
+
 📖 **Full database setup guide:** See [PRISMA_SETUP.md](./PRISMA_SETUP.md)
 
 ## 📚 Documentation
@@ -105,12 +127,37 @@ Toggle between storage modes using the button in the top-left:
 - **🖥️ Local** (Gray) - Fast, browser-only storage
 - **💾 Database** (Green) - Persistent, shareable storage
 
+### Using the AI Assistant
+
+1. **Open the AI Chat:**
+   - Click the "Ask AI" button in the playground
+   - The AI will automatically index your schema
+
+2. **Ask Questions:**
+   - "Show me all users with their posts"
+   - "Find tables related to authentication"
+   - "Generate a query to find inactive users"
+
+3. **Get SQL Queries:**
+   - The AI generates PostgreSQL-compatible SQL
+   - Explains the reasoning behind the query
+   - Provides suggestions for improvement
+
+4. **Chat History:**
+   - Your conversation is saved automatically
+   - Continue discussions across sessions
+   - Clear history anytime
+
 ## 🏗️ Project Structure
 
 ```
 agent/
 ├── app/
 │   ├── api/
+│   │   ├── ai/               # AI assistant API routes
+│   │   │   ├── ask/          # SQL generation endpoint
+│   │   │   ├── index/        # Schema indexing endpoint
+│   │   │   └── chat/         # Chat history management
 │   │   └── schemas/          # API routes for database operations
 │   ├── docs/                 # Technical documentation page
 │   ├── playground/           # Interactive schema designer
@@ -146,6 +193,11 @@ agent/
 ### Database & ORM
 - **Prisma** - Type-safe ORM
 - **PostgreSQL / MySQL / SQLite** - Database options
+
+### AI & Machine Learning
+- **OpenAI API** - GPT models for SQL generation
+- **Text Embeddings** - Vector similarity for schema matching
+- **RAG (Retrieval Augmented Generation)** - Context-aware AI responses
 
 ### UI & Visualization
 - **ReactFlow** - Flow-based graph visualization
@@ -198,6 +250,11 @@ pm2 start npm --name "flow-schema" -- start
 # Required for database mode
 DATABASE_URL="postgresql://user:pass@host:5432/db"
 
+# Required for AI assistant
+OPENAI_API_KEY="sk-your-openai-api-key"
+EMBED_MODEL_NAME="text-embedding-3-large"
+CHAT_MODEL="gpt-4o-mini"
+
 # Optional
 NEXT_PUBLIC_APP_URL="https://your-domain.com"
 NODE_ENV="production"
@@ -240,13 +297,14 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🎉 What's Next?
 
-- [ ] SQL export functionality
+- [x] SQL export functionality
+- [x] Real AI integration (OpenAI)
 - [ ] Import from existing databases
-- [ ] Real AI integration (OpenAI/Anthropic)
 - [ ] Collaborative editing
 - [ ] Schema templates
 - [ ] Migration generation
 - [ ] ERD export (PNG/SVG)
+- [ ] pgvector support for better embeddings
 
 ---
 

@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { Handle, Position } from "@xyflow/react"
-import { KeyRound, Link2, Database, PencilLine, Trash2, Plus, Eye } from "lucide-react"
+import { KeyRound, Link2, Database, PencilLine, Trash2, Plus, Eye, Download, Upload } from "lucide-react"
+import * as XLSX from 'xlsx'
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,111 @@ function uniqueColName(cols: Column[], base: string) {
     return name
 }
 
+// Excel utility functions
+function exportToExcel(tableName: string, description: string, columns: Column[], data: any[]) {
+    const workbook = XLSX.utils.book_new()
+    
+    // Create metadata sheet
+    const metadataSheet = [
+        ['Table Name', tableName],
+        ['Description', description || ''],
+        [''],
+        ['Column Name', 'Data Type', 'Description', 'Primary Key', 'Foreign Key', 'References Table'],
+        ...columns.map(col => [
+            col.name,
+            col.type,
+            col.description || '',
+            col.isPrimaryKey ? 'Yes' : 'No',
+            col.isForeignKey ? 'Yes' : 'No',
+            col.references?.table || ''
+        ])
+    ]
+    
+    const metadataWS = XLSX.utils.aoa_to_sheet(metadataSheet)
+    XLSX.utils.book_append_sheet(workbook, metadataWS, 'Metadata')
+    
+    // Create data sheet
+    if (data && data.length > 0) {
+        const headers = columns.map(col => col.name)
+        const dataSheet = [headers, ...data.map(row => headers.map(header => row[header] || ''))]
+        const dataWS = XLSX.utils.aoa_to_sheet(dataSheet)
+        XLSX.utils.book_append_sheet(workbook, dataWS, 'Data')
+    } else {
+        // Empty data sheet with headers
+        const headers = columns.map(col => col.name)
+        const dataWS = XLSX.utils.aoa_to_sheet([headers])
+        XLSX.utils.book_append_sheet(workbook, dataWS, 'Data')
+    }
+    
+    // Download the file
+    XLSX.writeFile(workbook, `${tableName}_export.xlsx`)
+}
+
+function parseExcelFile(file: File): Promise<{ columns: Column[]; data: any[]; metadata: { table: string; description: string } }> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer)
+                const workbook = XLSX.read(data, { type: 'array' })
+                
+                // Parse metadata sheet
+                const metadataSheet = workbook.Sheets['Metadata']
+                if (!metadataSheet) {
+                    throw new Error('Metadata sheet not found')
+                }
+                
+                const metadataData = XLSX.utils.sheet_to_json(metadataSheet, { header: 1 }) as any[][]
+                const tableName = metadataData[0]?.[1] || ''
+                const description = metadataData[1]?.[1] || ''
+                
+                // Parse columns from metadata
+                const columns: Column[] = []
+                for (let i = 4; i < metadataData.length; i++) {
+                    const row = metadataData[i]
+                    if (row && row[0]) {
+                        columns.push({
+                            name: row[0],
+                            type: (row[1] as ColumnType) || 'text',
+                            description: row[2] || '',
+                            isPrimaryKey: row[3] === 'Yes',
+                            isForeignKey: row[4] === 'Yes',
+                            references: row[5] ? { table: row[5] } : undefined
+                        })
+                    }
+                }
+                
+                // Parse data sheet
+                const dataSheet = workbook.Sheets['Data']
+                let parsedData: any[] = []
+                if (dataSheet) {
+                    const dataArray = XLSX.utils.sheet_to_json(dataSheet, { header: 1 }) as any[][]
+                    if (dataArray.length > 1) {
+                        const headers = dataArray[0] as string[]
+                        parsedData = dataArray.slice(1).map(row => {
+                            const obj: any = {}
+                            headers.forEach((header, index) => {
+                                obj[header] = row[index] || ''
+                            })
+                            return obj
+                        })
+                    }
+                }
+                
+                resolve({
+                    columns,
+                    data: parsedData,
+                    metadata: { table: tableName, description }
+                })
+            } catch (error) {
+                reject(error)
+            }
+        }
+        reader.onerror = () => reject(new Error('Failed to read file'))
+        reader.readAsArrayBuffer(file)
+    })
+}
+
 /* --------------------------------- Component --------------------------------- */
 
 export default function TableNode({ id, data }: { id: string; data: TableNodeData }) {
@@ -43,6 +149,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
     const [draftCols, setDraftCols] = React.useState(columns)
     const [draftTable, setDraftTable] = React.useState(table)
     const [draftDesc, setDraftDesc] = React.useState(description ?? "")
+    const fileInputRef = React.useRef<HTMLInputElement>(null)
 
     React.useEffect(() => {
         setDraftCols(columns)
@@ -84,6 +191,33 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
         setOpen(false)
     }
 
+    const handleExportExcel = () => {
+        exportToExcel(table, description || '', columns, data?.data || [])
+    }
+
+    const handleImportExcel = () => {
+        fileInputRef.current?.click()
+    }
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        try {
+            const result = await parseExcelFile(file)
+            data.onAfterImport?.(id, result)
+            // Reset file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+            }
+            // Show success message
+            alert(`Successfully imported ${result.data.length} rows and ${result.columns.length} columns from Excel file.`)
+        } catch (error) {
+            console.error('Error importing Excel file:', error)
+            alert('Error importing Excel file. Please make sure the file has the correct format with Metadata and Data sheets.')
+        }
+    }
+
     return (
         <Card className="relative w-[280px] rounded-xl border-2 border-slate-200 shadow-lg bg-gradient-to-br from-white to-slate-50 hover:shadow-xl hover:border-blue-300 transition-all duration-300 group">
             <CardContent className="p-0">
@@ -102,6 +236,26 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                             onClick={() => setPreviewOpen(true)}
                         >
                             <Eye className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-7 w-7 hover:bg-blue-100 hover:text-blue-600 transition-colors" 
+                            title="Export to Excel"
+                            onClick={handleExportExcel}
+                        >
+                            <Download className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-7 w-7 hover:bg-purple-100 hover:text-purple-600 transition-colors" 
+                            title="Import from Excel"
+                            onClick={handleImportExcel}
+                        >
+                            <Upload className="h-4 w-4" />
                         </Button>
                         
                         <Dialog open={open} onOpenChange={setOpen}>
@@ -369,6 +523,15 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                 tableName={table}
                 data={data.data || []}
                 columns={columns.map(col => col.name)}
+            />
+            
+            {/* Hidden file input for Excel import */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
             />
         </Card>
     )

@@ -24,7 +24,7 @@ export type TableNodeData = {
   reservedTableNames?: string[];
   onEditColumns?: (nodeId: string, nextCols: Column[]) => void;
   onEditTableMeta?: (nodeId: string, next: { table: string; description?: string }) => void;
-  onAfterImport?: (nodeId: string, payload: any) => void;
+  onAfterImport?: (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => void;
   onRefresh?: () => Promise<void> | void;
 };
 

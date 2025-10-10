@@ -236,6 +236,7 @@ export default function Flow() {
                             reservedTableNames: reserved,
                             onEditColumns: handleEditColumns,
                             onEditTableMeta: handleEditMeta,
+                            onAfterImport: handleAfterImport,
                             onRefresh: () => refetchRef.current(),
                         },
                     }
@@ -651,6 +652,29 @@ export default function Flow() {
                     return { ...n, data: { ...n.data, columns: cols } }
                 })
                 return withInjected(fixedRefs)
+            }),
+        [applyUpdate, withInjected]
+    )
+
+    const handleAfterImport = React.useCallback(
+        (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) =>
+            applyUpdate((prev) => {
+                const updated = prev.map((n) => {
+                    if (n.id === nodeId) {
+                        return {
+                            ...n,
+                            data: {
+                                ...n.data,
+                                table: payload.metadata.table,
+                                description: payload.metadata.description || n.data.description,
+                                columns: payload.columns,
+                                data: payload.data
+                            }
+                        }
+                    }
+                    return n
+                })
+                return withInjected(updated)
             }),
         [applyUpdate, withInjected]
     )

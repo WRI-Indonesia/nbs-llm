@@ -22,6 +22,7 @@ export type TableNodeData = {
   columns: Column[];
   data?: any[]; // Actual data rows for the table
   reservedTableNames?: string[];
+  otherTables?: Array<{ table: string; columns: Column[] }>; // Other tables for FK references
   onEditColumns?: (nodeId: string, nextCols: Column[]) => void;
   onEditTableMeta?: (nodeId: string, next: { table: string; description?: string }) => void;
   onAfterImport?: (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => void;

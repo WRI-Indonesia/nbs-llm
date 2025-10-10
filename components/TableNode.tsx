@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import DataPreviewModal from "./DataPreviewModal"
+import { toast } from 'sonner'
 import type { Column, TableNodeData, ColumnType } from "@/types"
 
 /* --------------------------------- Utils --------------------------------- */
@@ -143,7 +144,7 @@ function parseExcelFile(file: File): Promise<{ columns: Column[]; data: any[]; m
 
 export default function TableNode({ id, data }: { id: string; data: TableNodeData }) {
     const schema = data.schema ?? "public"
-    const { table, description, columns, reservedTableNames = [] } = data
+    const { table, description, columns, reservedTableNames = [], otherTables = [] } = data
     const [open, setOpen] = React.useState(false)
     const [previewOpen, setPreviewOpen] = React.useState(false)
     const [draftCols, setDraftCols] = React.useState(columns)
@@ -185,10 +186,17 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
 
     const onSave = () => {
         if (badCols || badTable) return
+        
+        
         data.onEditColumns?.(id, draftCols)
         if (draftTable !== table || draftDesc !== description) 
             data.onEditTableMeta?.(id, { table: draftTable, description: draftDesc })
         setOpen(false)
+        
+        // Refresh needed when creating foreign key references via modal
+        if (data.onRefresh) {
+            data.onRefresh()
+        }
     }
 
     const handleExportExcel = () => {
@@ -198,6 +206,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
     const handleImportExcel = () => {
         fileInputRef.current?.click()
     }
+
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
@@ -211,10 +220,16 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                 fileInputRef.current.value = ''
             }
             // Show success message
-            alert(`Successfully imported ${result.data.length} rows and ${result.columns.length} columns from Excel file.`)
+            toast.success('Excel Import Successful', {
+                description: `Imported ${result.data.length} rows and ${result.columns.length} columns from Excel file.`,
+                duration: 3000,
+            })
         } catch (error) {
             console.error('Error importing Excel file:', error)
-            alert('Error importing Excel file. Please make sure the file has the correct format with Metadata and Data sheets.')
+            toast.error('Excel Import Failed', {
+                description: 'Please make sure the file has the correct format with Metadata and Data sheets.',
+                duration: 5000,
+            })
         }
     }
 
@@ -248,6 +263,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                             <Download className="h-4 w-4" />
                         </Button>
                         
+                        
                         <Button 
                             size="icon" 
                             variant="ghost" 
@@ -257,6 +273,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                         >
                             <Upload className="h-4 w-4" />
                         </Button>
+                        
                         
                         <Dialog open={open} onOpenChange={setOpen}>
                             <DialogTrigger asChild>
@@ -408,6 +425,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                                         </Button>
                                                     </div>
                                                 </div>
+                                                
                                                 <div className="mt-3">
                                                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
                                                         Description <span className="text-red-500">*</span>
@@ -425,6 +443,47 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                                         </span>
                                                     )}
                                                 </div>
+                                                
+                                                {col.isForeignKey && (
+                                                    <div className="mt-3">
+                                                        <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                                            References Table
+                                                        </label>
+                                                        <Select 
+                                                            value={col.references?.table ? `${col.references.table}.${col.references.column || ''}` : "none"} 
+                                                            onValueChange={(value) => {
+                                                                if (value === "none" || !value) {
+                                                                    updateCol(i, { references: undefined })
+                                                                } else {
+                                                                    const [tableName, columnName] = value.split('.')
+                                                                    if (tableName && columnName) {
+                                                                        updateCol(i, { references: { table: tableName, column: columnName } })
+                                                                    } else {
+                                                                        updateCol(i, { references: undefined })
+                                                                    }
+                                                                }
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-9 border-slate-300">
+                                                                <SelectValue placeholder="Select table to reference" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none">
+                                                                    <span className="text-slate-500">None</span>
+                                                                </SelectItem>
+                                                                {otherTables.flatMap(otherTable => 
+                                                                    otherTable.columns
+                                                                        .filter(c => c.isPrimaryKey)
+                                                                        .map(pkCol => (
+                                                                            <SelectItem key={`${otherTable.table}.${pkCol.name}`} value={`${otherTable.table}.${pkCol.name}`}>
+                                                                                {otherTable.table}.{pkCol.name} (PK)
+                                                                            </SelectItem>
+                                                                        ))
+                                                                )}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                )}
                                             </div>
                                         )
                                     })}
@@ -470,6 +529,8 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                 {columns.map((col, idx) => {
                     const isLast = idx === columns.length - 1
                     const topCentered = "calc(50% + 1px)"
+                    
+                    
                     return (
                         <div 
                             key={`${table}-${col.name}-${idx}`} 

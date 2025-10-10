@@ -17,8 +17,13 @@ import TableNode from './TableNode'
 import type { TableNodeData, Column, HistoryItem } from '@/types'
 import { toast } from 'sonner'
 import SidebarChat from './SidebarChat'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 import { saveSchema, loadSchema, setStorageMode, type StorageMode, saveToLocal, loadFromLocal, getLocalVersionHistory } from '@/lib/schema-storage'
-import { GitBranch, MessageSquare } from 'lucide-react'
+import { GitBranch, MessageSquare, Plus, FileText } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { v4 as uuidv4 } from 'uuid'
 
 /* -------------------------- Handle / Edge helpers ------------------------- */
@@ -41,12 +46,16 @@ function buildEdgesFromRefs(nodes: Node<TableNodeData>[]): Edge[] {
             if (!dst) continue
             const pk = getPK(dst.data.columns, col.references.column)
             if (!pk) continue
+            const sourceHandleId = safeId(src.data.table, col.name, 'out')
+            const targetHandleId = safeId(dst.data.table, pk.name, 'in')
+            
+            
             edges.push({
                 id: `${src.id}.${col.name}-->${dst.id}.${pk.name}`,
                 source: src.id,
                 target: dst.id,
-                sourceHandle: safeId(src.data.table, col.name, 'out'),
-                targetHandle: safeId(dst.data.table, pk.name, 'in'),
+                sourceHandle: sourceHandleId,
+                targetHandle: targetHandleId,
                 type: 'smoothstep',
             })
         }
@@ -207,6 +216,7 @@ export default function Flow() {
     const [isBusy, setIsBusy] = React.useState(false)
     const [busyLabel, setBusyLabel] = React.useState<string>('Loading…')
     const saving = React.useRef(false)
+    const fkChanged = React.useRef(false)
 
     // versioning UI state
     const [showVersions, setShowVersions] = React.useState(false)
@@ -215,42 +225,70 @@ export default function Flow() {
 
     const [showChat, setShowChat] = React.useState(false)
     
+    // Add node modal state
+    const [showAddNodeModal, setShowAddNodeModal] = React.useState(false)
+    const [newTableName, setNewTableName] = React.useState('')
+    const [newTableDescription, setNewTableDescription] = React.useState('')
+    
     // Storage mode state - Default to database mode, but fallback to local for non-logged users
     const [storageMode, setStorageModeState] = React.useState<StorageMode>('database')
     const [currentSchemaId, setCurrentSchemaId] = React.useState<string | undefined>(undefined)
     const [isLoggedIn, setIsLoggedIn] = React.useState<boolean>(false)
     const [sessionId, setSessionId] = React.useState<string | null>(null)
     const [currentVersionId, setCurrentVersionId] = React.useState<string | null>(null)
+    const [refreshKey, setRefreshKey] = React.useState(0)
 
     // inject callbacks so TableNode can call them
     const refetchRef = React.useRef<() => Promise<void>>(() => Promise.resolve())
-    const withInjected = React.useCallback(
-        (arr: Node<TableNodeData>[]) => {
-            const reserved = arr.map((n) => n.data.table)
-            return arr.map((n) =>
-                n.type === 'table'
-                    ? {
-                        ...n,
-                        data: {
-                            ...n.data,
-                            reservedTableNames: reserved,
-                            onEditColumns: handleEditColumns,
-                            onEditTableMeta: handleEditMeta,
-                            onAfterImport: handleAfterImport,
-                            onRefresh: () => refetchRef.current(),
-                        },
-                    }
-                    : n
-            )
-        },
-        // deps intentionally empty to keep a stable mapper
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        []
-    )
+    
+    // Create refs to store handlers to avoid circular dependencies
+    const handleEditColumnsRef = React.useRef<((nodeId: string, nextCols: Column[]) => void) | null>(null)
+    const handleEditMetaRef = React.useRef<((nodeId: string, next: { table: string; description?: string }) => void) | null>(null)
+    const handleAfterImportRef = React.useRef<((nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => void) | null>(null)
+    
+    // Create a refresh function to update handles and edges
+    const refreshFlow = React.useCallback(() => {
+        // Force React Flow to update by triggering a re-render
+        setNodes(currentNodes => {
+            // Rebuild edges to ensure they match the current handles
+            const newEdges = buildEdgesFromRefs(currentNodes)
+            const laid = layoutNodes(currentNodes, newEdges)
+            
+            // Update edges immediately
+            setEdges(newEdges)
+            
+            // Force React Flow to re-render by updating the key
+            setRefreshKey(prev => prev + 1)
+            
+            // Return the laid out nodes to trigger React Flow update
+            return laid
+        })
+    }, [setNodes, setEdges])
 
     const fetchHistory = React.useCallback(async () => {
-        // Always try to load version history from database using sessionId
+        // Always try to load version history from database using currentSchemaId
         try {
+            if (currentSchemaId) {
+                // Fetch all versions for the current schema
+                const versionsResponse = await fetch(`/api/schemas/${currentSchemaId}`)
+                if (versionsResponse.ok) {
+                    const { schema: schemaWithVersions } = await versionsResponse.json()
+                    if (schemaWithVersions.versions) {
+                        const historyItems = schemaWithVersions.versions.map((v: any) => ({
+                            version: v.version,
+                            created_at: v.createdAt,
+                            restored_from: v.restoredFrom
+                        })).sort((a: any, b: any) => b.version - a.version) // Sort by version desc
+                        
+                        setHistory(historyItems)
+                        // Use currentVersion from database
+                        setLatestVersion(schemaWithVersions.currentVersion || schemaWithVersions.version)
+                        return
+                    }
+                }
+            }
+            
+            // Fallback: try to load version history from database using sessionId
             const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
             if (currentSessionId) {
                 const response = await fetch(`/api/schemas?sessionId=${currentSessionId}`)
@@ -288,7 +326,7 @@ export default function Flow() {
         ]
         setHistory(items)
         if (items.length > 0) setLatestVersion(items[0].version)
-    }, [sessionId])
+    }, [currentSchemaId, sessionId])
 
     const fetchGraph = React.useCallback(async () => {
         setBusyLabel('Initializing session…')
@@ -500,11 +538,8 @@ export default function Flow() {
             })
         } finally {
             setIsBusy(false)
-            // Reset loading state after a delay
-            setTimeout(() => {
-            }, 2000)
         }
-    }, [fetchHistory, setEdges, setNodes, withInjected])
+    }, [fetchHistory, setEdges, setNodes])
 
     // keep ref in sync with latest fetchGraph
     React.useEffect(() => {
@@ -612,28 +647,82 @@ export default function Flow() {
         (updater: (prev: Node<TableNodeData>[]) => Node<TableNodeData>[]) => {
             setNodes((prev) => {
                 const updated = updater(prev)
-                const edges2 = buildEdgesFromRefs(updated)
-                const laid = layoutNodes(updated, edges2)
-                queueMicrotask(() => {
-                    setEdges(edges2)
-                    saveGraph(laid, edges2)
-                })
-                return laid
+                return updated
             })
         },
-        [saveGraph, setEdges, setNodes]
+        [setNodes]
     )
+
+    // Define withInjected using refs to avoid circular dependencies
+    const withInjected = React.useCallback(
+        (arr: Node<TableNodeData>[]) => {
+            const reserved = arr.map((n) => n.data.table)
+            return arr.map((n) =>
+                n.type === 'table'
+                    ? {
+                        ...n,
+                        data: {
+                            ...n.data,
+                            reservedTableNames: reserved,
+                            otherTables: arr
+                                .filter(node => node.id !== n.id && node.type === 'table')
+                                .map(node => ({
+                                    table: node.data.table,
+                                    columns: node.data.columns
+                                })),
+                            onEditColumns: (nodeId: string, nextCols: Column[]) => handleEditColumnsRef.current?.(nodeId, nextCols),
+                            onEditTableMeta: (nodeId: string, next: { table: string; description?: string }) => handleEditMetaRef.current?.(nodeId, next),
+                            onAfterImport: (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => handleAfterImportRef.current?.(nodeId, payload),
+                            onRefresh: refreshFlow,
+                        },
+                    }
+                    : n
+            )
+        },
+        [refreshFlow]
+    )
+
+    // Rebuild edges only when FK references change
+    React.useEffect(() => {
+        if (nodes.length > 0 && fkChanged.current) {
+            // Immediately rebuild edges and update handles
+            const edges2 = buildEdgesFromRefs(nodes)
+            const laid = layoutNodes(nodes, edges2)
+            setEdges(edges2)
+            saveGraph(laid, edges2)
+            
+            // Reset the flag after processing
+            fkChanged.current = false
+        }
+    }, [nodes, setEdges, saveGraph])
 
     const handleEditColumns = React.useCallback(
-        (nodeId: string, nextCols: Column[]) =>
-            applyUpdate((prev) =>
-                withInjected(prev.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, columns: nextCols } } : n)))
-            ),
-        [applyUpdate, withInjected]
+        (nodeId: string, nextCols: Column[]) => {
+            
+            // Set flag to indicate FK changes
+            fkChanged.current = true
+            
+            applyUpdate((prev) => {
+                const updated = prev.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, columns: nextCols } } : n))
+                return withInjected(updated)
+            })
+            
+            // Refresh needed when creating/removing foreign keys via modal
+            refreshFlow()
+        },
+        [applyUpdate, withInjected, refreshFlow]
     )
 
+    // Store the handler in the ref
+    React.useEffect(() => {
+        handleEditColumnsRef.current = handleEditColumns
+    }, [handleEditColumns])
+
     const handleEditMeta = React.useCallback(
-        (nodeId: string, next: { table: string; description?: string }) =>
+        (nodeId: string, next: { table: string; description?: string }) => {
+            // Set flag to indicate FK changes
+            fkChanged.current = true
+            
             applyUpdate((prev) => {
                 // rename table and update FK references pointing to it
                 const me = prev.find((n) => n.id === nodeId)
@@ -652,12 +741,23 @@ export default function Flow() {
                     return { ...n, data: { ...n.data, columns: cols } }
                 })
                 return withInjected(fixedRefs)
-            }),
+            })
+            
+            // No refresh needed for metadata edits - only rebuild edges
+        },
         [applyUpdate, withInjected]
     )
 
+    // Store the handler in the ref
+    React.useEffect(() => {
+        handleEditMetaRef.current = handleEditMeta
+    }, [handleEditMeta])
+
     const handleAfterImport = React.useCallback(
-        (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) =>
+        (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => {
+            // Set flag to indicate FK changes
+            fkChanged.current = true
+            
             applyUpdate((prev) => {
                 const updated = prev.map((n) => {
                     if (n.id === nodeId) {
@@ -675,9 +775,253 @@ export default function Flow() {
                     return n
                 })
                 return withInjected(updated)
-            }),
-        [applyUpdate, withInjected]
+            })
+            
+            // Refresh needed for Excel import - this changes table structure significantly
+            refreshFlow()
+        },
+        [applyUpdate, withInjected, refreshFlow]
     )
+
+    // Store the handler in the ref
+    React.useEffect(() => {
+        handleAfterImportRef.current = handleAfterImport
+    }, [handleAfterImport])
+
+
+
+
+
+    const handleAddNode = React.useCallback(() => {
+        if (!newTableName.trim() || !newTableDescription.trim()) {
+            toast.error('Validation Error', {
+                description: 'Please provide both table name and description.',
+                duration: 3000,
+            })
+            return
+        }
+
+        // Check if table name already exists
+        const existingTable = nodes.find(n => n.data.table.toLowerCase() === newTableName.trim().toLowerCase())
+        if (existingTable) {
+            toast.error('Table Name Exists', {
+                description: `A table with the name "${newTableName.trim()}" already exists.`,
+                duration: 3000,
+            })
+            return
+        }
+
+        const newNode: Node<TableNodeData> = {
+            id: `table-${uuidv4()}`,
+            type: 'table',
+            position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
+            data: {
+                table: newTableName.trim(),
+                description: newTableDescription.trim(),
+                columns: [
+                    { name: 'id', type: 'number', isPrimaryKey: true, description: 'Unique identifier' }
+                ],
+                data: []
+            }
+        }
+
+        applyUpdate((prev) => {
+            const updated = [...prev, newNode]
+            return withInjected(updated)
+        })
+
+        // Refresh needed when adding a new node
+        refreshFlow()
+
+        // Save the new table to database immediately
+        setNodes(currentNodes => {
+            setEdges(currentEdges => {
+                saveGraph(currentNodes, currentEdges)
+                return currentEdges
+            })
+            return currentNodes
+        })
+
+        // Reset form and close modal
+        setNewTableName('')
+        setNewTableDescription('')
+        setShowAddNodeModal(false)
+
+        toast.success('Table Created', {
+            description: `Table "${newTableName.trim()}" has been created successfully.`,
+            duration: 3000,
+        })
+    }, [newTableName, newTableDescription, nodes, applyUpdate, withInjected, refreshFlow, saveGraph])
+
+    // Handle node changes and save to database only on deletions
+    const handleNodesChange = React.useCallback((changes: any[]) => {
+        // Check if any nodes are being deleted
+        const hasDeletions = changes.some(change => change.type === 'remove')
+        
+        onNodesChange(changes)
+        
+        // Only save if there are deletions and not already saving
+        if (hasDeletions && !saving.current) {
+            // Set flag to indicate FK changes
+            fkChanged.current = true
+            
+            // Refresh needed when deleting nodes
+            refreshFlow()
+            
+            // Immediately save with current state
+            setNodes(currentNodes => {
+                setEdges(currentEdges => {
+                    saveGraph(currentNodes, currentEdges)
+                    return currentEdges
+                })
+                return currentNodes
+            })
+        }
+    }, [onNodesChange, saveGraph, refreshFlow])
+
+    // Handle manual connections (drag and drop)
+    const handleConnect = React.useCallback((connection: Connection) => {
+        if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+            return
+        }
+        
+        // Parse handle IDs to get table and column information
+        const sourceHandleId = connection.sourceHandle
+        const targetHandleId = connection.targetHandle
+        
+        // Extract table and column from handle IDs (format: table__column__out/in)
+        const sourceMatch = sourceHandleId.match(/^(.+)__(.+)__out$/)
+        const targetMatch = targetHandleId.match(/^(.+)__(.+)__in$/)
+        
+        if (!sourceMatch || !targetMatch) {
+            return
+        }
+        
+        const [, sourceTable, sourceColumn] = sourceMatch
+        const [, targetTable, targetColumn] = targetMatch
+        
+        // Set flag to indicate FK changes
+        fkChanged.current = true
+        
+        // Find the source node and update its FK reference
+        setNodes((currentNodes) => {
+            const updatedNodes = currentNodes.map(node => {
+                if (node.id === connection.source) {
+                    const updatedColumns = node.data.columns.map(col => {
+                        if (col.name === sourceColumn) {
+                            return {
+                                ...col,
+                                isForeignKey: true,
+                                references: { table: targetTable, column: targetColumn }
+                            }
+                        }
+                        return col
+                    })
+                    return { ...node, data: { ...node.data, columns: updatedColumns } }
+                }
+                return node
+            })
+            
+            return updatedNodes
+        })
+    }, [applyUpdate])
+
+    // Handle edge changes and save to database only on deletions
+    const handleEdgesChange = React.useCallback((changes: any[]) => {
+        // Check if any edges are being deleted
+        const hasDeletions = changes.some(change => change.type === 'remove')
+        
+        onEdgesChange(changes)
+        
+        // Only save if there are deletions and not already saving
+        if (hasDeletions && !saving.current) {
+            // Set flag to indicate FK changes
+            fkChanged.current = true
+            
+            // Refresh needed when deleting edges
+            refreshFlow()
+            
+            // Immediately update nodes to remove FK references for deleted edges
+            setNodes(currentNodes => {
+                const updatedNodes = currentNodes.map(node => {
+                    const updatedColumns = node.data.columns.map(col => {
+                        if (col.isForeignKey && col.references) {
+                            // Check if this FK reference corresponds to a deleted edge
+                            const targetNode = byTable(currentNodes, col.references.table)
+                            if (targetNode) {
+                                const pkCol = getPK(targetNode.data.columns, col.references.column)
+                                if (pkCol) {
+                                    const edgeId = `${node.id}.${col.name}-->${targetNode.id}.${pkCol.name}`
+                                    const isDeleted = changes.some(change => change.type === 'remove' && change.id === edgeId)
+                                    if (isDeleted) {
+                                        // Remove the FK reference
+                                        return { ...col, isForeignKey: false, references: undefined }
+                                    }
+                                }
+                            }
+                        }
+                        return col
+                    })
+                    return { ...node, data: { ...node.data, columns: updatedColumns } }
+                })
+                
+                return updatedNodes
+            })
+        }
+    }, [onEdgesChange, applyUpdate, refreshFlow])
+
+    // Sample download function
+    const handleDownloadSample = React.useCallback(() => {
+        // Create sample data for demonstration
+        const sampleColumns: Column[] = [
+            { name: 'id', type: 'number', isPrimaryKey: true, description: 'Unique identifier' },
+            { name: 'name', type: 'text', description: 'Item name' },
+            { name: 'price', type: 'number', description: 'Item price' },
+            { name: 'active', type: 'boolean', description: 'Is item active' },
+        ]
+        
+        const sampleData = [
+            { id: 1, name: 'Sample Item 1', price: 29.99, active: true },
+            { id: 2, name: 'Sample Item 2', price: 49.99, active: false },
+            { id: 3, name: 'Sample Item 3', price: 19.99, active: true },
+        ]
+        
+        // Create Excel file
+        const workbook = XLSX.utils.book_new()
+        
+        // Create metadata sheet
+        const metadataSheet = [
+            ['Table Name', 'sample_table'],
+            ['Description', 'Sample table for import demonstration'],
+            [''],
+            ['Column Name', 'Data Type', 'Description', 'Primary Key', 'Foreign Key', 'References Table'],
+            ...sampleColumns.map(col => [
+                col.name,
+                col.type,
+                col.description || '',
+                col.isPrimaryKey ? 'Yes' : 'No',
+                col.isForeignKey ? 'Yes' : 'No',
+                col.references?.table || ''
+            ])
+        ]
+        
+        const metadataWS = XLSX.utils.aoa_to_sheet(metadataSheet)
+        XLSX.utils.book_append_sheet(workbook, metadataWS, 'Metadata')
+        
+        // Create data sheet
+        const headers = sampleColumns.map(col => col.name)
+        const dataSheet = [headers, ...sampleData.map(row => headers.map(header => (row as any)[header] || ''))]
+        const dataWS = XLSX.utils.aoa_to_sheet(dataSheet)
+        XLSX.utils.book_append_sheet(workbook, dataWS, 'Data')
+        
+        // Download the file
+        XLSX.writeFile(workbook, 'sample_table_import.xlsx')
+        
+        toast.success('Sample Downloaded', {
+            description: 'Sample Excel file downloaded. Use this as a template for your imports.',
+            duration: 3000,
+        })
+    }, [])
 
     // connect FK → PK
     const parseHandleId = (h?: string) => {
@@ -802,12 +1146,13 @@ export default function Flow() {
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
             <ReactFlow
+                key={refreshKey}
                 nodes={nodes}
                 edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                nodeTypes={nodeTypes}
+                onNodesChange={handleNodesChange}
+                onEdgesChange={handleEdgesChange}
+                onConnect={handleConnect}
+                nodeTypes={{ table: TableNode }}
                 fitView
                 fitViewOptions={{ padding: 0.3 }}
             >
@@ -842,6 +1187,24 @@ export default function Flow() {
                     >
                         <MessageSquare className="w-4 h-4" />
                         Ask AI
+                    </button>
+
+                    <button
+                        onClick={() => setShowAddNodeModal(true)}
+                        className="px-3 py-2 rounded-xl border border-green-200/50 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-200 hover:from-green-600 hover:to-green-700 hover:-translate-y-0.5 hover:shadow-lg backdrop-blur-sm"
+                        title="Add new table"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Table
+                    </button>
+
+                    <button
+                        onClick={handleDownloadSample}
+                        className="px-3 py-2 rounded-xl border border-orange-200/50 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-200 hover:from-orange-600 hover:to-orange-700 hover:-translate-y-0.5 hover:shadow-lg backdrop-blur-sm"
+                        title="Download sample Excel template"
+                    >
+                        <FileText className="w-4 h-4" />
+                        Sample Excel
                     </button>
                 </div>
             </Panel>
@@ -905,6 +1268,66 @@ export default function Flow() {
                     </div>
                 </div>
             )}
+
+            {/* Add Table Modal */}
+            <Dialog open={showAddNodeModal} onOpenChange={setShowAddNodeModal}>
+                <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                            <Plus className="h-6 w-6 text-green-600" />
+                            Add New Table
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4 py-4">
+                        <div>
+                            <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
+                                Table Name <span className="text-red-500">*</span>
+                            </label>
+                            <Input 
+                                value={newTableName} 
+                                onChange={(e) => setNewTableName(e.target.value)} 
+                                placeholder="e.g., products, orders, customers"
+                                className="h-10"
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
+                                Description <span className="text-red-500">*</span>
+                            </label>
+                            <Textarea 
+                                value={newTableDescription} 
+                                onChange={(e) => setNewTableDescription(e.target.value)} 
+                                placeholder="Brief description of what this table stores"
+                                className="min-h-[80px]"
+                                rows={3}
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                        <Button 
+                            variant="ghost" 
+                            onClick={() => {
+                                setShowAddNodeModal(false)
+                                setNewTableName('')
+                                setNewTableDescription('')
+                            }}
+                            className="min-w-[100px]"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            onClick={handleAddNode}
+                            disabled={!newTableName.trim() || !newTableDescription.trim()}
+                            className="min-w-[100px] bg-green-600 hover:bg-green-700"
+                        >
+                            Create Table
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* blocks all interaction during any work */}
             <FullscreenLoader visible={isBusy} label={busyLabel} />

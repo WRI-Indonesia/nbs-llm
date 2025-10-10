@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Handle, Position } from "@xyflow/react"
-import { KeyRound, Link2, Database, PencilLine, Trash2, Plus } from "lucide-react"
+import { KeyRound, Link2, Database, PencilLine, Trash2, Plus, Eye } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import DataPreviewModal from "./DataPreviewModal"
 import type { Column, TableNodeData, ColumnType } from "@/types"
 
 /* --------------------------------- Utils --------------------------------- */
@@ -38,6 +39,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
     const schema = data.schema ?? "public"
     const { table, description, columns, reservedTableNames = [] } = data
     const [open, setOpen] = React.useState(false)
+    const [previewOpen, setPreviewOpen] = React.useState(false)
     const [draftCols, setDraftCols] = React.useState(columns)
     const [draftTable, setDraftTable] = React.useState(table)
     const [draftDesc, setDraftDesc] = React.useState(description ?? "")
@@ -92,6 +94,16 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                     </Badge>
 
                     <div className="flex items-center gap-1">
+                        <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-7 w-7 hover:bg-green-100 hover:text-green-600 transition-colors" 
+                            title="Preview data"
+                            onClick={() => setPreviewOpen(true)}
+                        >
+                            <Eye className="h-4 w-4" />
+                        </Button>
+                        
                         <Dialog open={open} onOpenChange={setOpen}>
                             <DialogTrigger asChild>
                                 <Button size="icon" variant="ghost" className="h-7 w-7 hover:bg-blue-100 hover:text-blue-600 transition-colors" title="Edit table">
@@ -349,6 +361,15 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                     )
                 })}
             </CardContent>
+            
+            {/* Data Preview Modal */}
+            <DataPreviewModal
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+                tableName={table}
+                data={data.data || []}
+                columns={columns.map(col => col.name)}
+            />
         </Card>
     )
 }

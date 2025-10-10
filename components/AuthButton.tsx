@@ -41,8 +41,8 @@ export default function AuthButton() {
     setIsLoggedIn(true)
     setShowSignIn(false)
     setShowSignUp(false)
-    // Refresh the page to update the Flow component
-    window.location.reload()
+    // Redirect to schema selection page for logged-in users
+    window.location.href = '/schemas'
   }
 
   const handleSignOut = async () => {

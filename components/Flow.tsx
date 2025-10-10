@@ -277,6 +277,11 @@ export default function Flow() {
             let isAuthenticated = false
             let userId = null
             let currentSessionId: string = ''
+            let schemaId: string | null = null
+            
+            // Check for schemaId in URL parameters (for logged-in users)
+            const urlParams = new URLSearchParams(window.location.search)
+            schemaId = urlParams.get('schemaId')
             
             try {
                 // Try to get session info from auth endpoint (reads from cookies)
@@ -286,7 +291,15 @@ export default function Flow() {
                     if (authData.user) {
                         isAuthenticated = true
                         userId = authData.user.id
-                        currentSessionId = userId // Use userId as sessionId for logged-in users
+                        
+                        if (schemaId) {
+                            // Logged-in user with specific schemaId
+                            currentSessionId = schemaId
+                        } else {
+                            // Logged-in user without schemaId - redirect to schema selection
+                            window.location.href = '/schemas'
+                            return
+                        }
                     }
                 }
             } catch (err) {
@@ -294,8 +307,8 @@ export default function Flow() {
             }
             
             if (isAuthenticated && userId) {
-                // User is logged in - use userId as sessionId
-                setBusyLabel('Loading from database…')
+                // User is logged in - use schemaId as sessionId
+                setBusyLabel('Loading schema from database…')
             } else {
                 // User not logged in - generate UUID sessionId for guest
                 currentSessionId = localStorage.getItem('etl-ai-sessionId') || uuidv4()
@@ -314,11 +327,28 @@ export default function Flow() {
             
             // Try to load from database with sessionId
             try {
-                const response = await fetch(`/api/schemas?sessionId=${currentSessionId}`)
+                let response: Response
+                
+                if (isAuthenticated && schemaId) {
+                    // For logged-in users, fetch specific schema by ID
+                    response = await fetch(`/api/schemas/${schemaId}`)
+                } else {
+                    // For guest users, fetch by sessionId
+                    response = await fetch(`/api/schemas?sessionId=${currentSessionId}`)
+                }
                 
                 if (response.ok) {
-                    const { schemas } = await response.json()
-                    const defaultSchema = schemas.find((s: any) => s.name === 'default')
+                    let defaultSchema: any
+                    
+                    if (isAuthenticated && schemaId) {
+                        // For logged-in users, we get the schema directly
+                        const { schema } = await response.json()
+                        defaultSchema = schema
+                    } else {
+                        // For guest users, find the default schema
+                        const { schemas } = await response.json()
+                        defaultSchema = schemas.find((s: any) => s.name === 'default')
+                    }
                     
                     if (defaultSchema) {
                         // Load existing schema from database
@@ -366,64 +396,72 @@ export default function Flow() {
                 console.log('Database not available or no schema found, creating sample schema')
             }
             
-            // No schema found - create version 1 from sample data
-            try {
-                const dataToSave = {
-                    nodes: SAMPLE_NODES,
-                    edges: []
+            // No schema found - handle based on user type
+            if (isAuthenticated) {
+                // Logged-in user without schemaId should not be here (redirected earlier)
+                // But if they are, redirect to schema selection
+                window.location.href = '/schemas'
+                return
+            } else {
+                // Guest user - create version 1 from sample data
+                try {
+                    const dataToSave = {
+                        nodes: SAMPLE_NODES,
+                        edges: []
+                    }
+                    
+                    const versionId = `v_${uuidv4()}`
+                    
+                    // Create new schema with sample data
+                    const response = await fetch('/api/schemas', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sessionId: currentSessionId,
+                            versionId,
+                            graphJson: dataToSave
+                        })
+                    })
+                    
+                    if (response.ok) {
+                        const { schema } = await response.json()
+                        setCurrentSchemaId(schema.id)
+                        setLatestVersion(1)
+                        
+                        const injected = withInjected(SAMPLE_NODES)
+                        const rebuiltEdges = buildEdgesFromRefs(injected)
+                        const laid = layoutNodes(injected, rebuiltEdges)
+                        setNodes(laid)
+                        setEdges(rebuiltEdges)
+                        
+                        // Show toast for sample schema creation
+                        toast.success('Sample schema created', {
+                            description: 'Version 1 created from sample data',
+                            duration: 3000,
+                        })
+                        
+                        await fetchHistory()
+                        return
+                    }
+                } catch (createError) {
+                    console.error('Failed to create sample schema:', createError)
                 }
                 
-                const versionId = `v_${uuidv4()}`
+                // Fallback to sample data if schema creation fails
+                const injected = withInjected(SAMPLE_NODES)
+                const rebuiltEdges = buildEdgesFromRefs(injected)
+                const laid = layoutNodes(injected, rebuiltEdges)
+                setNodes(laid)
+                setEdges(rebuiltEdges)
                 
-                // Create new schema with sample data
-                const response = await fetch('/api/schemas', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        sessionId: currentSessionId,
-                        versionId,
-                        graphJson: dataToSave
-                    })
+                // Show toast for fallback
+                toast.info('Using sample data', {
+                    description: 'Schema creation failed, using fallback',
+                    duration: 3000,
                 })
                 
-                if (response.ok) {
-                    const { schema } = await response.json()
-                    setCurrentSchemaId(schema.id)
-                    setLatestVersion(1)
-                    
-                    const injected = withInjected(SAMPLE_NODES)
-                    const rebuiltEdges = buildEdgesFromRefs(injected)
-                    const laid = layoutNodes(injected, rebuiltEdges)
-                    setNodes(laid)
-                    setEdges(rebuiltEdges)
-                    
-                    // Show toast for sample schema creation
-                    toast.success('Sample schema created', {
-                        description: 'Version 1 created from sample data',
-                        duration: 3000,
-                    })
-                    
-                    await fetchHistory()
-                    return
-                }
-            } catch (createError) {
-                console.error('Failed to create sample schema:', createError)
+                await fetchHistory()
             }
-            
-            // Fallback to sample data if schema creation fails
-            const injected = withInjected(SAMPLE_NODES)
-            const rebuiltEdges = buildEdgesFromRefs(injected)
-            const laid = layoutNodes(injected, rebuiltEdges)
-            setNodes(laid)
-            setEdges(rebuiltEdges)
-            
-            // Show toast for fallback
-            toast.info('Using sample data', {
-                description: 'Schema creation failed, using fallback',
-                duration: 3000,
-            })
-            
-            await fetchHistory()
         } catch (err: any) {
             console.error('Error loading schema:', err)
             

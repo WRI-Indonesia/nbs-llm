@@ -2,7 +2,7 @@
 
 import Flow from "@/components/Flow"
 import Link from "next/link"
-import { Home, Database } from "lucide-react"
+import { Home, Database, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import AuthButton from "@/components/AuthButton"
 import '@xyflow/react/dist/style.css'
@@ -24,6 +24,12 @@ export default function PlaygroundPage() {
               <Button variant="ghost" size="sm" className="gap-2 hover:bg-purple-100 hover:text-purple-700 transition-colors">
                 <Home className="h-4 w-4" />
                 Home
+              </Button>
+            </Link>
+            <Link href="/schemas">
+              <Button variant="ghost" size="sm" className="gap-2 hover:bg-purple-100 hover:text-purple-700 transition-colors">
+                <FolderOpen className="h-4 w-4" />
+                Schemas
               </Button>
             </Link>
             <AuthButton />

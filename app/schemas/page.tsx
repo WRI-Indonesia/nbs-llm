@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus, Database, Calendar, Trash2, Edit3, Play, FileText, Sparkles } from "lucide-react"
+import { Plus, Database, Calendar, Trash2, Play, FileText, Sparkles } from "lucide-react"
 import { toast } from 'sonner'
 import Link from 'next/link'
+import Header from "@/components/Header"
 
 // Sample data for new schemas
 const SAMPLE_SCHEMA_DATA = {
@@ -268,138 +269,120 @@ export default function SchemaSelectionPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50">
-      {/* Header */}
-      <div className="border-b border-purple-200/50 bg-gradient-to-r from-purple-50 via-blue-50 to-indigo-50 backdrop-blur-sm sticky top-0 z-50 shadow-sm">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
-              <Database className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                Schema Templates
-              </h1>
-              <p className="text-sm text-gray-600">Choose or create a schema to work with</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/" className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-purple-700 transition-colors">
-              Home
-            </Link>
-            <Link href="/docs" className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-purple-700 transition-colors">
-              Docs
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Header />
 
       <div className="container mx-auto px-6 py-8">
-        {/* Create Schema Button */}
-        <div className="mb-8">
-          <Dialog open={showCreateDialog} onOpenChange={handleDialogClose}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all">
-                <Plus className="w-4 h-4" />
+        {/* Create Schema Button - Only show if user has schemas */}
+        {schemas.length > 0 && (
+          <div className="mb-8">
+            <Button 
+              onClick={() => setShowCreateDialog(true)}
+              className="gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Create New Schema
+            </Button>
+          </div>
+        )}
+
+        {/* Create Schema Dialog - Always available */}
+        <Dialog open={showCreateDialog} onOpenChange={handleDialogClose}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5 text-purple-600" />
                 Create New Schema
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Plus className="h-5 w-5 text-purple-600" />
-                  Create New Schema
-                </DialogTitle>
-                <DialogDescription>
-                  Create a new schema template to start designing your database structure
-                </DialogDescription>
-              </DialogHeader>
+              </DialogTitle>
+              <DialogDescription>
+                Create a new schema template to start designing your database structure
+              </DialogDescription>
+            </DialogHeader>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium block mb-1.5">Schema Name</label>
-                  <Input
-                    type="text"
-                    value={newSchemaName}
-                    onChange={handleNameChange}
-                    placeholder="e.g., E-commerce Database"
-                    className={`w-full ${nameError ? 'border-red-500 focus:border-red-500' : ''}`}
-                    required
-                  />
-                  {nameError && (
-                    <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
-                      <span className="text-red-500">⚠</span>
-                      {nameError}
-                    </p>
-                  )}
-                </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Schema Name</label>
+                <Input
+                  type="text"
+                  value={newSchemaName}
+                  onChange={handleNameChange}
+                  placeholder="e.g., E-commerce Database"
+                  className={`w-full ${nameError ? 'border-red-500 focus:border-red-500' : ''}`}
+                  required
+                />
+                {nameError && (
+                  <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
+                    <span className="text-red-500">⚠</span>
+                    {nameError}
+                  </p>
+                )}
+              </div>
 
-                <div>
-                  <label className="text-sm font-medium block mb-1.5">Description (Optional)</label>
-                  <Input
-                    type="text"
-                    value={newSchemaDescription}
-                    onChange={(e) => setNewSchemaDescription(e.target.value)}
-                    placeholder="Brief description of this schema"
-                    className="w-full"
-                  />
-                </div>
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Description (Optional)</label>
+                <Input
+                  type="text"
+                  value={newSchemaDescription}
+                  onChange={(e) => setNewSchemaDescription(e.target.value)}
+                  placeholder="Brief description of this schema"
+                  className="w-full"
+                />
+              </div>
 
-                <div>
-                  <label className="text-sm font-medium block mb-1.5">Template</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSchemaTemplate('blank')}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        schemaTemplate === 'blank'
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
-                      }`}
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <FileText className="w-5 h-5" />
-                        <span className="text-sm font-medium">Blank Schema</span>
-                        <span className="text-xs text-gray-500">Start from scratch</span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSchemaTemplate('sample')}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        schemaTemplate === 'sample'
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
-                      }`}
-                    >
-                      <div className="flex flex-col items-center gap-2">
-                        <Sparkles className="w-5 h-5" />
-                        <span className="text-sm font-medium">Sample Schema</span>
-                        <span className="text-xs text-gray-500">Users, Posts, Comments</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    onClick={createSchema}
-                    disabled={creating || !newSchemaName.trim() || !!nameError}
-                    className="flex-1"
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Template</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSchemaTemplate('blank')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      schemaTemplate === 'blank'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                    }`}
                   >
-                    {creating ? 'Creating...' : 'Create Schema'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowCreateDialog(false)}
-                    className="flex-1"
+                    <div className="flex flex-col items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      <span className="text-sm font-medium">Blank Schema</span>
+                      <span className="text-xs text-gray-500">Start from scratch</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSchemaTemplate('sample')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      schemaTemplate === 'sample'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+                    }`}
                   >
-                    Cancel
-                  </Button>
+                    <div className="flex flex-col items-center gap-2">
+                      <Sparkles className="w-5 h-5" />
+                      <span className="text-sm font-medium">Sample Schema</span>
+                      <span className="text-xs text-gray-500">Users, Posts, Comments</span>
+                    </div>
+                  </button>
                 </div>
               </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  onClick={createSchema}
+                  disabled={creating || !newSchemaName.trim() || !!nameError}
+                  className="flex-1"
+                >
+                  {creating ? 'Creating...' : 'Create Schema'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowCreateDialog(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Schemas Grid */}
         {schemas.length === 0 ? (

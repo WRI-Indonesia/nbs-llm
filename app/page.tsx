@@ -3,39 +3,12 @@ import { ArrowRight, Database, Workflow, Sparkles, MousePointerClick, Pencil, Gi
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Toaster } from "@/components/ui/sonner"
-import AuthButton from "@/components/AuthButton"
+import Header from "@/components/Header"
 
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      {/* Header */}
-      <header className="border-b border-purple-200/50 bg-gradient-to-r from-purple-50 via-blue-50 to-indigo-50 backdrop-blur-sm sticky top-0 z-50 shadow-sm">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg shadow-sm">
-              <Database className="h-6 w-6 text-white" />
-            </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Flow Schema Designer</h1>
-          </div>
-          <nav className="flex gap-2 items-center">
-            <Link href="/">
-              <Button variant="ghost" className="hover:bg-purple-100 hover:text-purple-700 transition-colors">Home</Button>
-            </Link>
-            <Link href="/docs">
-              <Button variant="ghost" className="gap-2 hover:bg-blue-100 hover:text-blue-700 transition-colors">
-                <BookOpen className="h-4 w-4" />
-                Docs
-              </Button>
-            </Link>
-            <Link href="/playground">
-              <Button className="gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all">
-                Playground <ArrowRight className="ml-1 h-4 w-4" />
-              </Button>
-            </Link>
-            <AuthButton />
-          </nav>
-        </div>
-      </header>
+      <Header />
 
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-16 text-center">

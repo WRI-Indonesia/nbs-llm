@@ -41,7 +41,7 @@ export default function AuthButton() {
     setIsLoggedIn(true)
     setShowSignIn(false)
     setShowSignUp(false)
-    // Redirect to schema selection page for logged-in users
+    // Redirect to schemas page for logged-in users
     window.location.href = '/schemas'
   }
 

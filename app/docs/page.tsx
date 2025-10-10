@@ -15,12 +15,12 @@ export default function TechnicalDocsPage() {
         <section className="mb-16">
           <h2 className="text-4xl font-bold mb-6">Architecture Overview</h2>
           <p className="text-lg text-slate-600 mb-4">
-            Flow Schema Designer is a modern web application built with Next.js 15 and React 19, 
-            leveraging the latest web technologies to provide a seamless database schema design experience.
+            NBS LLM Schema Designer is a modern web application built with Next.js 15 and React 19, 
+            leveraging the latest web technologies to provide a seamless database schema design experience with AI-powered assistance.
           </p>
           <p className="text-lg text-slate-600">
             The application follows a component-based architecture with strict TypeScript typing, 
-            local-first data persistence, and extensible design patterns.
+            local-first data persistence, AI integration, and extensible design patterns.
           </p>
         </section>
 
@@ -133,8 +133,15 @@ export default function TechnicalDocsPage() {
           <Card>
             <CardContent className="p-6">
               <pre className="text-sm bg-slate-900 text-slate-100 p-6 rounded-lg overflow-x-auto">
-{`/Users/deddysetiawan/Documents/wri/agent/
+{`nbs-llm/
 ├── app/
+│   ├── api/
+│   │   ├── ai/                   # AI assistant API routes
+│   │   │   ├── ask/              # SQL generation endpoint
+│   │   │   ├── index/            # Schema indexing endpoint
+│   │   │   └── chat/             # Chat history management
+│   │   ├── auth/                 # Authentication routes
+│   │   └── schemas/              # Schema CRUD operations
 │   ├── docs/
 │   │   └── page.tsx              # Technical documentation
 │   ├── playground/
@@ -147,22 +154,26 @@ export default function TechnicalDocsPage() {
 │   ├── Flow.tsx                  # Main flow editor component
 │   ├── SidebarChat.tsx           # AI chat assistant
 │   ├── TableNode.tsx             # Custom table node component
-│   ├── Map.tsx                   # Map placeholder
-│   ├── GeoUploadButton.tsx       # Geo upload placeholder
+│   ├── Header.tsx                # Navigation header
+│   ├── AuthModals.tsx            # Authentication modals
 │   └── ui/                       # shadcn/ui components
 │       ├── button.tsx
 │       ├── card.tsx
 │       ├── dialog.tsx
 │       └── ...
 │
-├── types/
-│   └── index.ts                  # Centralized TypeScript types
-│
 ├── lib/
+│   ├── auth.ts                   # Authentication configuration
+│   ├── prisma.ts                 # Prisma client singleton
+│   ├── schema-storage.ts         # Storage abstraction layer
 │   └── utils.ts                  # Utility functions
 │
 ├── prisma/
+│   ├── migrations/               # Database migrations
 │   └── schema.prisma             # Database schema definition
+│
+├── types/
+│   └── index.ts                  # Centralized TypeScript types
 │
 ├── public/                       # Static assets
 ├── .env                          # Environment variables (git-ignored)
@@ -418,20 +429,22 @@ export type ChatMessage =
             </CardHeader>
             <CardContent>
               <pre className="text-sm bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
-{`# Database Connection
-DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+{`# NextAuth Configuration
+NEXTAUTH_SECRET=
+NEXTAUTH_URL=
 
-# Optional: For multi-provider support
-# DATABASE_URL="mysql://user:password@localhost:3306/mydb"
-# DATABASE_URL="file:./dev.db"  # SQLite
+# Google OAuth (optional - for Google sign-in)
+# Get these from https://console.developers.google.com/
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 
-# Optional: AI Service Configuration
-# OPENAI_API_KEY="sk-..."
-# ANTHROPIC_API_KEY="sk-ant-..."
+# Database
+DATABASE_URL=
 
-# Optional: Application Settings
-# NEXT_PUBLIC_APP_URL="http://localhost:3000"
-# NODE_ENV="development"`}
+
+OPENAI_API_KEY=
+EMBED_MODEL_NAME=
+CHAT_MODEL=`}
               </pre>
             </CardContent>
           </Card>
@@ -603,8 +616,8 @@ pm2 start npm --name "flow-schema" -- start`}
               <CardContent>
                 <pre className="text-sm bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
 {`# Clone repository
-git clone <repo-url>
-cd agent
+git clone https://github.com/WRI-Indonesia/nbs-llm.git
+cd nbs-llm
 
 # Install dependencies
 npm install
@@ -665,7 +678,12 @@ npm run dev
       {/* Footer */}
       <footer className="border-t bg-slate-50 py-8">
         <div className="container mx-auto px-4 text-center text-slate-600">
-          <p>© 2025 Flow Schema Designer. Built with ❤️ using Next.js and Prisma.</p>
+          <p>© 2025 NBS LLM Schema Designer. Built with ❤️ using Next.js and Prisma.</p>
+          <p className="mt-2">
+            <a href="https://github.com/WRI-Indonesia/nbs-llm" className="text-blue-600 hover:text-blue-800 underline">
+              View on GitHub
+            </a>
+          </p>
         </div>
       </footer>
     </div>

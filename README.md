@@ -1,6 +1,6 @@
-# Flow Schema Designer 🎨
+# NBS LLM Schema Designer 🎨
 
-A modern, visual database schema designer built with Next.js and Prisma. Design your database schemas with an intuitive drag-and-drop interface, then sync directly to your database.
+A modern, visual database schema designer built with Next.js and Prisma. Design your database schemas with an intuitive drag-and-drop interface, enhanced with AI-powered assistance for smarter schema design.
 
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![React](https://img.shields.io/badge/React-19-blue)
@@ -30,8 +30,8 @@ A modern, visual database schema designer built with Next.js and Prisma. Design 
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd agent
+git clone https://github.com/WRI-Indonesia/nbs-llm.git
+cd nbs-llm
 
 # Install dependencies
 npm install
@@ -151,13 +151,14 @@ Toggle between storage modes using the button in the top-left:
 ## 🏗️ Project Structure
 
 ```
-agent/
+nbs-llm/
 ├── app/
 │   ├── api/
 │   │   ├── ai/               # AI assistant API routes
 │   │   │   ├── ask/          # SQL generation endpoint
 │   │   │   ├── index/        # Schema indexing endpoint
 │   │   │   └── chat/         # Chat history management
+│   │   ├── auth/             # Authentication routes
 │   │   └── schemas/          # API routes for database operations
 │   ├── docs/                 # Technical documentation page
 │   ├── playground/           # Interactive schema designer
@@ -168,14 +169,18 @@ agent/
 │   ├── Flow.tsx              # Main flow editor component
 │   ├── TableNode.tsx         # Custom table node
 │   ├── SidebarChat.tsx       # AI assistant sidebar
+│   ├── Header.tsx            # Navigation header
+│   ├── AuthModals.tsx        # Authentication modals
 │   └── ui/                   # shadcn/ui components
 │
 ├── lib/
+│   ├── auth.ts               # Authentication configuration
 │   ├── prisma.ts             # Prisma client singleton
 │   ├── schema-storage.ts     # Storage abstraction layer
 │   └── utils.ts              # Utility functions
 │
 ├── prisma/
+│   ├── migrations/           # Database migrations
 │   └── schema.prisma         # Database schema definition
 │
 └── types/
@@ -293,7 +298,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - 📖 [User Guide](http://localhost:3000)
 - 🔧 [Technical Docs](http://localhost:3000/docs)
-- 💬 [GitHub Issues](your-repo-url/issues)
+- 💬 [GitHub Issues](https://github.com/WRI-Indonesia/nbs-llm/issues)
+- 🔗 [GitHub Repository](https://github.com/WRI-Indonesia/nbs-llm)
 
 ## 🎉 What's Next?
 
@@ -308,6 +314,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-Built with ❤️ using Next.js, Prisma, and ReactFlow
+Built with ❤️ by WRI Indonesia using Next.js, Prisma, and ReactFlow
 
 **Happy Schema Designing! 🚀**
+
+---
+
+**Repository:** [https://github.com/WRI-Indonesia/nbs-llm](https://github.com/WRI-Indonesia/nbs-llm)

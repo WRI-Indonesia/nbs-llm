@@ -15,14 +15,15 @@ export default function HomePage() {
         <div className="max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-semibold mb-6">
             <Zap className="h-4 w-4" />
-            <span>Visual Database Design Made Easy</span>
+            <span>Data Lab Indonesia LLM - Talk with your data</span>
           </div>
           <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-slate-900 to-slate-600 bg-clip-text text-transparent">
-            Visual Database Schema Designer
+            Data Lab Indonesia LLM Experimental
           </h2>
           <p className="text-xl text-slate-600 mb-8">
-            Create, edit, and visualize your database schemas with an intuitive flow-based interface. 
-            Build relationships between tables with drag-and-drop simplicity. Works with or without authentication! 🎨✨
+            Transform your Excel data into powerful relational databases with an intuitive visual interface. 
+            Create relationships between your data tables, then talk with your data using AI to get insights, 
+            solutions, and learn SQL and prompts. Turn your spreadsheets into intelligent data systems! 📊🤖✨
           </p>
           <div className="flex gap-4 justify-center">
             <Link href="/playground">
@@ -42,17 +43,17 @@ export default function HomePage() {
 
       {/* Features */}
       <section className="container mx-auto px-4 py-16">
-        <h3 className="text-3xl font-bold text-center mb-12">Why Choose Flow Schema Designer?</h3>
+        <h3 className="text-3xl font-bold text-center mb-12">Why Choose Data Lab Indonesia LLM?</h3>
         <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
           <Card className="border-2 hover:border-blue-300 transition-colors">
             <CardHeader>
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
                 <Workflow className="h-7 w-7 text-blue-600" />
               </div>
-              <CardTitle>Visual Flow Editor</CardTitle>
+              <CardTitle>Excel to Database Converter</CardTitle>
               <CardDescription>
-                Design your database schema using an intuitive visual flow interface powered by ReactFlow. 
-                See your entire schema at a glance! 👁️
+                Transform your Excel spreadsheets into structured relational databases with an intuitive visual interface. 
+                Import, organize, and connect your data tables seamlessly! 📊
               </CardDescription>
             </CardHeader>
           </Card>
@@ -62,10 +63,10 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
                 <Database className="h-7 w-7 text-green-600" />
               </div>
-              <CardTitle>Smart Relationships</CardTitle>
+              <CardTitle>AI-Powered Data Chat</CardTitle>
               <CardDescription>
-                Define primary keys, foreign keys, and automatically visualize relationships between tables. 
-                Connect with a simple drag! 🔗
+                Talk with your data using natural language! Ask questions, get insights, generate SQL queries, 
+                and learn data analysis techniques through AI conversation. 🤖💬
               </CardDescription>
             </CardHeader>
           </Card>
@@ -75,10 +76,10 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
                 <Sparkles className="h-7 w-7 text-purple-600" />
               </div>
-              <CardTitle>Prisma Integration</CardTitle>
+              <CardTitle>SQL & Prompt Learning</CardTitle>
               <CardDescription>
-                Sync your designs directly to your database using Prisma ORM. 
-                From design to production in seconds! ⚡
+                Learn SQL queries and AI prompting techniques through interactive examples. 
+                Master data analysis skills while working with your own data! 📚🎓
               </CardDescription>
             </CardHeader>
           </Card>
@@ -90,7 +91,7 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
             <h3 className="text-3xl font-bold mb-4">How to Use in 5 Easy Steps</h3>
-            <p className="text-lg text-slate-600">Follow this simple guide to master Flow Schema Designer 🚀</p>
+            <p className="text-lg text-slate-600">Follow this simple guide to master Data Lab Indonesia LLM 🚀</p>
           </div>
           
           <div className="space-y-6">
@@ -106,11 +107,11 @@ export default function HomePage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <MousePointerClick className="h-6 w-6 text-blue-600" />
-                      <h4 className="text-2xl font-bold">Open the Playground</h4>
+                      <h4 className="text-2xl font-bold">Import Your Excel Data</h4>
                     </div>
                     <p className="text-slate-600 mb-4 text-lg">
-                      Click the <span className="font-semibold text-blue-600">"Playground"</span> button to start designing. 
-                      You'll see a sample schema with users, posts, and comments tables to get you started!
+                      Click the <span className="font-semibold text-blue-600">"Playground"</span> button to start. 
+                      Upload your Excel files or start with sample data to understand how to structure your information!
                     </p>
                     <div className="flex gap-2">
                       <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
@@ -137,10 +138,10 @@ export default function HomePage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <Pencil className="h-6 w-6 text-purple-600" />
-                      <h4 className="text-2xl font-bold">Edit Your Tables</h4>
+                      <h4 className="text-2xl font-bold">Structure Your Data</h4>
                     </div>
                     <p className="text-slate-600 mb-4 text-lg">
-                      Click the <span className="font-semibold">pencil icon</span> on any table to customize it:
+                      Click the <span className="font-semibold">pencil icon</span> on any table to organize your data:
                     </p>
                     <div className="grid md:grid-cols-2 gap-3 mb-4">
                       <div className="flex items-center gap-2 text-slate-700">
@@ -182,10 +183,11 @@ export default function HomePage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <GitBranch className="h-6 w-6 text-green-600" />
-                      <h4 className="text-2xl font-bold">Create Relationships</h4>
+                      <h4 className="text-2xl font-bold">Connect Your Data</h4>
                     </div>
                     <p className="text-slate-600 mb-4 text-lg">
-                      Connect your tables by <span className="font-semibold">dragging connections</span> between them. It's as easy as drawing a line! 🎨
+                      Create relationships between your data tables by <span className="font-semibold">dragging connections</span>. 
+                      Link related information across different datasets! 🔗
                     </p>
                     <div className="space-y-3 mb-4">
                       <div className="flex items-start gap-3">
@@ -229,32 +231,33 @@ export default function HomePage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <MessageSquare className="h-6 w-6 text-amber-600" />
-                      <h4 className="text-2xl font-bold">Ask the AI Assistant</h4>
+                      <h4 className="text-2xl font-bold">Talk with Your Data</h4>
                     </div>
                     <p className="text-slate-600 mb-4 text-lg">
-                      Stuck? Click <span className="font-semibold text-amber-600">"Ask AI"</span> to get help with your schema design! 🤖
+                      Click <span className="font-semibold text-amber-600">"Ask AI"</span> to start a conversation with your data! 
+                      Get insights, generate SQL queries, and learn data analysis techniques! 🤖💬
                     </p>
                     <div className="grid md:grid-cols-2 gap-3 mb-4">
                       <div className="flex items-center gap-2 text-slate-700">
-                        <span className="text-xl">💬</span>
-                        <span>Ask schema design questions</span>
+                        <span className="text-xl">📊</span>
+                        <span>Ask questions about your data</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700">
-                        <span className="text-xl">📚</span>
-                        <span>Learn best practices</span>
+                        <span className="text-xl">🔍</span>
+                        <span>Get insights and patterns</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700">
+                        <span className="text-xl">💻</span>
+                        <span>Generate SQL queries</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700">
                         <span className="text-xl">🎓</span>
-                        <span>Get instant feedback</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <span className="text-xl">🔧</span>
-                        <span>Troubleshoot issues</span>
+                        <span>Learn SQL and prompting</span>
                       </div>
                     </div>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                       <p className="text-sm text-amber-900">
-                        <strong>📌 Note:</strong> Currently in demo mode. Connect to an AI service for real-time assistance!
+                        <strong>✨ Examples:</strong> "Show me sales trends", "Find customers with high value", "Generate a report for Q4 performance"
                       </p>
                     </div>
                   </div>
@@ -274,10 +277,10 @@ export default function HomePage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <Save className="h-6 w-6 text-indigo-600" />
-                      <h4 className="text-2xl font-bold">Save & Version Control</h4>
+                      <h4 className="text-2xl font-bold">Save & Share Your Data</h4>
                     </div>
                     <p className="text-slate-600 mb-4 text-lg">
-                      Your work is <span className="font-semibold">automatically saved</span> with full version history! 💾
+                      Your data models and conversations are <span className="font-semibold">automatically saved</span> with full version history! 💾
                     </p>
                     <div className="space-y-3 mb-4">
                       <div className="flex items-start gap-3">
@@ -286,7 +289,7 @@ export default function HomePage() {
                         </div>
                         <div>
                           <p className="font-semibold text-slate-800">View Version History</p>
-                          <p className="text-sm text-slate-600">Click "Versions" to see all your schema changes over time</p>
+                          <p className="text-sm text-slate-600">Click "Versions" to see all your data model changes over time</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -303,15 +306,15 @@ export default function HomePage() {
                           <Database className="h-4 w-4 text-indigo-700" />
                         </div>
                         <div>
-                          <p className="font-semibold text-slate-800">Sync with Database</p>
-                          <p className="text-sm text-slate-600">Configure your DATABASE_URL to sync with Prisma (coming soon!)</p>
+                          <p className="font-semibold text-slate-800">Export Your Data</p>
+                          <p className="text-sm text-slate-600">Export your structured data to SQL, CSV, or other formats for analysis</p>
                         </div>
                       </div>
                     </div>
                     <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                       <p className="text-sm text-indigo-900">
                         <strong>🛡️ Smart Storage:</strong> Logged in users save to database with version history. 
-                        Non-logged users save to localStorage. Your data is always safe!
+                        Non-logged users save to localStorage. Your data and conversations are always safe!
                       </p>
                     </div>
                   </div>
@@ -323,8 +326,8 @@ export default function HomePage() {
           {/* Quick Start CTA */}
           <div className="mt-12 text-center">
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl p-8 text-white">
-              <h4 className="text-2xl font-bold mb-3">Ready to Start?</h4>
-              <p className="text-lg mb-6 text-blue-50">Jump into the playground and create your first schema in under 2 minutes! ⚡</p>
+              <h4 className="text-2xl font-bold mb-3">Ready to Transform Your Data?</h4>
+              <p className="text-lg mb-6 text-blue-50">Jump into the playground and start talking with your data in under 2 minutes! ⚡</p>
               <Link href="/playground">
                 <Button size="lg" variant="secondary" className="gap-2">
                   <Zap className="h-5 w-5" />
@@ -357,9 +360,9 @@ export default function HomePage() {
                 <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
                   <Database className="h-6 w-6 text-green-600" />
                 </div>
-                <CardTitle>Database Ready</CardTitle>
+                <CardTitle>Data Export Ready</CardTitle>
                 <CardDescription>
-                  Export to Prisma schema or SQL. Deploy to PostgreSQL, MySQL, or SQLite.
+                  Export your structured data to SQL, CSV, JSON, or other formats for analysis and sharing.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -382,10 +385,10 @@ export default function HomePage() {
       {/* CTA Section */}
       <section className="container mx-auto px-4 py-16 text-center">
         <div className="max-w-2xl mx-auto">
-          <h3 className="text-3xl font-bold mb-6">Start Designing Beautiful Schemas Today</h3>
+          <h3 className="text-3xl font-bold mb-6">Start Talking with Your Data Today</h3>
           <p className="text-xl text-slate-600 mb-8">
-            Start designing immediately with localStorage, or sign up for database sync and version history. 
-            No credit card needed. Just pure schema design magic! ✨
+            Transform your Excel data into intelligent systems with AI-powered conversations. 
+            No credit card needed. Just pure data magic! ✨
           </p>
           <div className="flex gap-4 justify-center">
             <Link href="/playground">
@@ -407,7 +410,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t bg-slate-50 py-8">
         <div className="container mx-auto px-4 text-center text-slate-600">
-          <p>© 2025 Flow Schema Designer. Built with Next.js, Prisma, and ReactFlow.</p>
+          <p>© 2025 Data Lab Indonesia LLM. Built with Next.js, Prisma, and ReactFlow.</p>
         </div>
       </footer>
       <Toaster 

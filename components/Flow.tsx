@@ -6,6 +6,7 @@ import {
     ReactFlow,
     Controls,
     Background,
+    Panel,
     useNodesState,
     useEdgesState,
     type Node,
@@ -17,7 +18,7 @@ import type { TableNodeData, Column, HistoryItem } from '@/types'
 import { toast } from 'sonner'
 import SidebarChat from './SidebarChat'
 import { saveSchema, loadSchema, setStorageMode, type StorageMode, saveToLocal, loadFromLocal, getLocalVersionHistory } from '@/lib/schema-storage'
-import { Database, GitBranch, MessageSquare, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { GitBranch, MessageSquare } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 
 /* -------------------------- Handle / Edge helpers ------------------------- */
@@ -113,41 +114,12 @@ function FullscreenLoader({ visible, label = 'Loading…' }: { visible: boolean;
             role="status"
             aria-live="polite"
             aria-busy="true"
-            style={{
-                position: 'fixed',
-                inset: 0,
-                background: 'rgba(17, 24, 39, 0.45)',
-                backdropFilter: 'blur(3px)',
-                display: 'grid',
-                placeItems: 'center',
-                zIndex: 1000,
-            }}
+            className="fixed inset-0 bg-gray-900/45 backdrop-blur-sm grid place-items-center z-[1000]"
         >
-            <div
-                style={{
-                    display: 'grid',
-                    gap: 12,
-                    placeItems: 'center',
-                    padding: '18px 22px',
-                    background: 'rgba(255,255,255,0.95)',
-                    borderRadius: 12,
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
-                    minWidth: 160,
-                }}
-            >
-                <div
-                    style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '9999px',
-                        border: '4px solid rgba(0,0,0,0.15)',
-                        borderTopColor: '#111827',
-                        animation: 'spin 0.9s linear infinite',
-                    }}
-                />
-                <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{label}</span>
+            <div className="grid gap-3 place-items-center p-5 bg-white/95 rounded-xl shadow-2xl min-w-40">
+                <div className="w-8 h-8 rounded-full border-4 border-black/15 border-t-gray-900 animate-spin" />
+                <span className="text-sm font-semibold text-gray-900">{label}</span>
             </div>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     )
 }
@@ -213,8 +185,6 @@ export default function Flow() {
     // single busy flag + label for any work
     const [isBusy, setIsBusy] = React.useState(false)
     const [busyLabel, setBusyLabel] = React.useState<string>('Loading…')
-    const [loadingState, setLoadingState] = React.useState<'idle' | 'loading' | 'success' | 'error'>('idle')
-    const [lastAction, setLastAction] = React.useState<string>('')
     const saving = React.useRef(false)
 
     // versioning UI state
@@ -301,8 +271,6 @@ export default function Flow() {
     const fetchGraph = React.useCallback(async () => {
         setBusyLabel('Initializing session…')
         setIsBusy(true)
-        setLoadingState('loading')
-        setLastAction('Initializing')
         
         try {
             // Check if user is logged in first
@@ -328,7 +296,6 @@ export default function Flow() {
             if (isAuthenticated && userId) {
                 // User is logged in - use userId as sessionId
                 setBusyLabel('Loading from database…')
-                setLastAction('Loading from database')
             } else {
                 // User not logged in - generate UUID sessionId for guest
                 currentSessionId = localStorage.getItem('etl-ai-sessionId') || uuidv4()
@@ -336,7 +303,6 @@ export default function Flow() {
                     localStorage.setItem('etl-ai-sessionId', currentSessionId)
                 }
                 setBusyLabel('Loading from database…')
-                setLastAction('Loading from database')
             }
             
             setSessionId(currentSessionId)
@@ -385,8 +351,6 @@ export default function Flow() {
                         const laid = layoutNodes(injected, rebuiltEdges)
                         setNodes(laid)
                         setEdges(rebuiltEdges)
-                        setLoadingState('success')
-                        setLastAction('Loaded from database')
                         
                         // Show toast for database load
                         toast.success('Schema loaded from database', {
@@ -432,8 +396,6 @@ export default function Flow() {
                     const laid = layoutNodes(injected, rebuiltEdges)
                     setNodes(laid)
                     setEdges(rebuiltEdges)
-                    setLoadingState('success')
-                    setLastAction('Created sample schema')
                     
                     // Show toast for sample schema creation
                     toast.success('Sample schema created', {
@@ -454,8 +416,6 @@ export default function Flow() {
             const laid = layoutNodes(injected, rebuiltEdges)
             setNodes(laid)
             setEdges(rebuiltEdges)
-            setLoadingState('success')
-            setLastAction('Using sample data (fallback)')
             
             // Show toast for fallback
             toast.info('Using sample data', {
@@ -466,8 +426,6 @@ export default function Flow() {
             await fetchHistory()
         } catch (err: any) {
             console.error('Error loading schema:', err)
-            setLoadingState('error')
-            setLastAction('Error loading')
             
             // Fallback to sample data on error
             const injected = withInjected(SAMPLE_NODES)
@@ -475,8 +433,6 @@ export default function Flow() {
             const laid = layoutNodes(injected, rebuiltEdges)
             setNodes(laid)
             setEdges(rebuiltEdges)
-            setLoadingState('success')
-            setLastAction('Fallback to sample data')
             
             toast.error('Failed to load schema', {
                 description: 'Using sample data as fallback',
@@ -486,8 +442,6 @@ export default function Flow() {
             setIsBusy(false)
             // Reset loading state after a delay
             setTimeout(() => {
-                setLoadingState('idle')
-                setLastAction('')
             }, 2000)
         }
     }, [fetchHistory, setEdges, setNodes, withInjected])
@@ -784,214 +738,77 @@ export default function Flow() {
                 />
             )}
 
-            {/* floating action buttons */}
-            <div style={{ 
-                position: 'fixed', 
-                top: 80, // Moved down to avoid header overlap
-                left: 12, 
-                zIndex: 900, 
-                display: 'flex', 
-                gap: 8, 
-                flexWrap: 'wrap',
-                backgroundColor: 'rgba(255,255,255,0.95)', // More opaque background
-                backdropFilter: 'blur(10px)', // Modern glass effect
-                padding: '8px',
-                borderRadius: '12px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)', // Modern shadow
-                border: '1px solid rgba(255,255,255,0.2)' // Subtle border
-            }}>
-                
-                {/* Modern Loading Status Indicator */}
-                {loadingState !== 'idle' && (
-                    <div
-                        style={{
-                            padding: '8px 12px',
-                            borderRadius: 12,
-                            border: `1px solid ${
-                                loadingState === 'loading' ? 'rgba(59,130,246,0.2)' :
-                                loadingState === 'success' ? 'rgba(34,197,94,0.2)' :
-                                'rgba(239,68,68,0.2)'
-                            }`,
-                            background: `linear-gradient(135deg, ${
-                                loadingState === 'loading' ? '#3b82f6, #2563eb' :
-                                loadingState === 'success' ? '#22c55e, #16a34a' :
-                                '#ef4444, #dc2626'
-                            })`,
-                            color: 'white',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                            fontSize: 13,
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            backdropFilter: 'blur(10px)',
-                            animation: loadingState === 'loading' ? 'pulse 2s infinite' : 'none'
-                        }}
-                        title={lastAction}
+            {/* Action buttons panel */}
+            <Panel position="top-left" className="mt-20 ml-3">
+                <div className="flex gap-2 flex-wrap bg-white/95 backdrop-blur-sm p-2 rounded-xl shadow-lg border border-white/20">
+                    <button
+                        onClick={handleOpenVersions}
+                        className="px-3 py-2 rounded-xl border border-indigo-200/50 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-200 hover:from-indigo-600 hover:to-indigo-700 hover:-translate-y-0.5 hover:shadow-lg backdrop-blur-sm"
+                        title={`View ${history.length} versions`}
                     >
-                        {loadingState === 'loading' && <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />}
-                        {loadingState === 'success' && <CheckCircle style={{ width: 16, height: 16 }} />}
-                        {loadingState === 'error' && <AlertCircle style={{ width: 16, height: 16 }} />}
-                        {lastAction}
-                    </div>
-                )}
-                
-                <button
-                    onClick={handleOpenVersions}
-                    style={{
-                        padding: '8px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(99,102,241,0.2)',
-                        background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                        color: 'white',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        backdropFilter: 'blur(10px)',
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #4f46e5, #4338ca)'
-                        e.currentTarget.style.transform = 'translateY(-1px)'
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #6366f1, #4f46e5)'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
-                    }}
-                    title={`View ${history.length} versions`}
-                >
-                    <GitBranch style={{ width: 16, height: 16 }} />
-                    Versions ({history.length})
-                </button>
+                        <GitBranch className="w-4 h-4" />
+                        Versions ({history.length})
+                    </button>
 
-
-                <button
-                    onClick={() => setShowChat((v) => !v)}
-                    style={{
-                        padding: '8px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(168,85,247,0.2)',
-                        background: 'linear-gradient(135deg, #a855f7, #9333ea)',
-                        color: 'white',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                        backdropFilter: 'blur(10px)',
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #9333ea, #7c3aed)'
-                        e.currentTarget.style.transform = 'translateY(-1px)'
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'linear-gradient(135deg, #a855f7, #9333ea)'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
-                    }}
-                    title="Open AI Assistant"
-                >
-                    <MessageSquare style={{ width: 16, height: 16 }} />
-                    Ask AI
-                </button>
-            </div>
+                    <button
+                        onClick={() => setShowChat((v) => !v)}
+                        className="px-3 py-2 rounded-xl border border-purple-200/50 bg-gradient-to-r from-purple-500 to-purple-600 text-white text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-200 hover:from-purple-600 hover:to-purple-700 hover:-translate-y-0.5 hover:shadow-lg backdrop-blur-sm"
+                        title="Open AI Assistant"
+                    >
+                        <MessageSquare className="w-4 h-4" />
+                        Ask AI
+                    </button>
+                </div>
+            </Panel>
 
             {/* versions modal */}
             {showVersions && (
                 <div
                     onClick={() => setShowVersions(false)}
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        zIndex: 950,
-                        background: 'rgba(17,24,39,0.45)',
-                        backdropFilter: 'blur(2px)',
-                        display: 'grid',
-                        placeItems: 'center',
-                    }}
+                    className="fixed inset-0 z-[950] bg-gray-900/45 backdrop-blur-sm grid place-items-center"
                 >
                     <div
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                            width: 'min(680px, 92vw)',
-                            maxHeight: '80vh',
-                            overflow: 'auto',
-                            background: 'white',
-                            borderRadius: 14,
-                            boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-                            padding: 18,
-                            display: 'grid',
-                            gap: 12,
-                        }}
+                        className="w-[min(680px,92vw)] max-h-[80vh] overflow-auto bg-white rounded-2xl shadow-2xl p-5 grid gap-3"
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ fontWeight: 700, fontSize: 16 }}>Version History</div>
+                        <div className="flex items-center justify-between">
+                            <div className="font-bold text-base">Version History</div>
                             <button
                                 onClick={() => setShowVersions(false)}
-                                style={{
-                                    border: '1px solid rgba(0,0,0,0.08)',
-                                    background: 'white',
-                                    borderRadius: 8,
-                                    padding: '6px 10px',
-                                    cursor: 'pointer',
-                                    fontWeight: 600,
-                                }}
+                                className="border border-black/8 bg-white rounded-lg px-2.5 py-1.5 cursor-pointer font-semibold hover:bg-gray-50 transition-colors"
                             >
                                 Close
                             </button>
                         </div>
 
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>
+                        <div className="text-xs text-gray-500">
                             {latestVersion ? `Latest is v${latestVersion}.` : 'No versions yet.'}
                         </div>
 
-                        <div style={{ display: 'grid', gap: 8 }}>
+                        <div className="grid gap-2">
                             {history.map((h) => {
                                 const dateStr = new Date(h.created_at).toLocaleString()
                                 const isLatest = h.version === latestVersion
                                 return (
                                     <div
                                         key={h.version}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            padding: '10px 12px',
-                                            borderRadius: 10,
-                                            border: '1px solid rgba(0,0,0,0.06)',
-                                            background: isLatest ? 'rgba(16,185,129,0.06)' : 'white',
-                                        }}
+                                        className={`flex items-center justify-between p-3 rounded-xl border border-black/6 ${
+                                            isLatest ? 'bg-emerald-50' : 'bg-white'
+                                        }`}
                                     >
-                                        <div style={{ display: 'grid', gap: 2 }}>
-                                            <div style={{ fontWeight: 700, fontSize: 14 }}>
-                                                v{h.version} {isLatest && <span style={{ fontWeight: 600, color: '#10b981' }}>(latest)</span>}
+                                        <div className="grid gap-0.5">
+                                            <div className="font-bold text-sm">
+                                                v{h.version} {isLatest && <span className="font-semibold text-emerald-600">(latest)</span>}
                                             </div>
-                                            <div style={{ fontSize: 12, color: '#6b7280' }}>{dateStr}</div>
+                                            <div className="text-xs text-gray-500">{dateStr}</div>
                                             {h.restored_from != null && (
-                                                <div style={{ fontSize: 12, color: '#6b7280' }}>restored from v{h.restored_from}</div>
+                                                <div className="text-xs text-gray-500">restored from v{h.restored_from}</div>
                                             )}
                                         </div>
-                                        <div style={{ display: 'flex', gap: 8 }}>
+                                        <div className="flex gap-2">
                                             <button
                                                 onClick={() => handleRestore(h.version)}
-                                                style={{
-                                                    border: '1px solid rgba(0,0,0,0.1)',
-                                                    background: 'white',
-                                                    borderRadius: 8,
-                                                    padding: '6px 10px',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 600,
-                                                }}
+                                                className="border border-black/10 bg-white rounded-lg px-2.5 py-1.5 cursor-pointer font-semibold hover:bg-gray-50 transition-colors"
                                             >
                                                 Restore
                                             </button>

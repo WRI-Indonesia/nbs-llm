@@ -114,9 +114,9 @@ async function getCurrentSchema(sessionId?: string) {
 // Execute SQL on real data from schema nodes
 function executeSQLOnRealData(sql: string, schemaData: any): { result: any[], columns: string[] } {
   try {
-    // Extract table names from SQL (simple regex)
-    const tableMatches = sql.match(/\bFROM\s+(\w+)/gi) || []
-    const tables = tableMatches.map(match => match.replace(/FROM\s+/i, '').toLowerCase())
+    // Extract table names from SQL (including JOINs)
+    const tableMatches = sql.match(/\b(?:FROM|JOIN)\s+(\w+)/gi) || []
+    const tables = tableMatches.map(match => match.replace(/(?:FROM|JOIN)\s+/i, '').toLowerCase())
     
     if (tables.length === 0) {
       return { result: [], columns: [] }
@@ -139,6 +139,11 @@ function executeSQLOnRealData(sql: string, schemaData: any): { result: any[], co
       const tableName = tableNode.data.table.toLowerCase()
       tableData[tableName] = tableNode.data.data || [] // Use real data from node
       tableColumns[tableName] = tableNode.data.columns.map((col: any) => col.name)
+    }
+    
+    // Handle JOIN operations
+    if (sql.toLowerCase().includes('join')) {
+      return executeJoinQuery(sql, tableData, tableColumns)
     }
     
     // Simple SQL execution based on query type
@@ -177,6 +182,138 @@ function executeSQLOnRealData(sql: string, schemaData: any): { result: any[], co
     
   } catch (error) {
     console.error('Error executing SQL on real data:', error)
+    return { result: [], columns: [] }
+  }
+}
+
+function executeJoinQuery(sql: string, tableData: { [key: string]: any[] }, tableColumns: { [key: string]: string[] }): { result: any[], columns: string[] } {
+  try {
+    // Extract JOIN information
+    const joinMatch = sql.match(/(\w+)\s+(?:LEFT\s+)?JOIN\s+(\w+)\s+ON\s+([^;]+)/i)
+    if (!joinMatch) {
+      return { result: [], columns: [] }
+    }
+    
+    const [, leftTable, rightTable, joinCondition] = joinMatch
+    const leftTableName = leftTable.toLowerCase()
+    const rightTableName = rightTable.toLowerCase()
+    
+    const leftData = tableData[leftTableName] || []
+    const rightData = tableData[rightTableName] || []
+    
+    // Parse join condition (e.g., "posts.user_id = users.id")
+    const joinConditionMatch = joinCondition.match(/(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/i)
+    if (!joinConditionMatch) {
+      return { result: [], columns: [] }
+    }
+    
+    const [, leftTableAlias, leftColumn, rightTableAlias, rightColumn] = joinConditionMatch
+    
+    // The FROM table is always the left table, JOIN table is always the right table
+    const actualLeftTable = leftTableName
+    const actualRightTable = rightTableName
+    const actualLeftData = leftData
+    const actualRightData = rightData
+    
+    // Determine which column to use for joining based on the condition
+    let actualLeftColumn: string
+    let actualRightColumn: string
+    
+    if (leftTableAlias.toLowerCase() === leftTableName) {
+      actualLeftColumn = leftColumn
+      actualRightColumn = rightColumn
+    } else {
+      actualLeftColumn = rightColumn
+      actualRightColumn = leftColumn
+    }
+    
+    // Perform the JOIN
+    const joinedResults: any[] = []
+    
+    for (const leftRow of actualLeftData) {
+      const leftValue = leftRow[actualLeftColumn]
+      
+      // Find matching rows in right table
+      const matchingRightRows = actualRightData.filter(rightRow => 
+        rightRow[actualRightColumn] === leftValue
+      )
+      
+      if (matchingRightRows.length > 0) {
+        // Create joined rows with proper column prefixes
+        for (const rightRow of matchingRightRows) {
+          const joinedRow: any = {}
+          
+          // Add left table columns with prefix
+          for (const col of tableColumns[actualLeftTable] || []) {
+            joinedRow[`${actualLeftTable}.${col}`] = leftRow[col]
+            // Also add without prefix for backward compatibility
+            joinedRow[col] = leftRow[col]
+          }
+          
+          // Add right table columns with prefix
+          for (const col of tableColumns[actualRightTable] || []) {
+            joinedRow[`${actualRightTable}.${col}`] = rightRow[col]
+            // Only add without prefix if it doesn't conflict
+            if (!joinedRow[col]) {
+              joinedRow[col] = rightRow[col]
+            }
+          }
+          
+          joinedResults.push(joinedRow)
+        }
+      } else if (sql.toLowerCase().includes('left join')) {
+        // For LEFT JOIN, include left row even if no match
+        const joinedRow: any = {}
+        
+        // Add left table columns
+        for (const col of tableColumns[actualLeftTable] || []) {
+          joinedRow[`${actualLeftTable}.${col}`] = leftRow[col]
+          joinedRow[col] = leftRow[col]
+        }
+        
+        // Add null values for right table columns
+        for (const col of tableColumns[actualRightTable] || []) {
+          joinedRow[`${actualRightTable}.${col}`] = null
+        }
+        
+        joinedResults.push(joinedRow)
+      }
+    }
+    
+    // Extract column names from SELECT clause
+    const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM/i)
+    let columns: string[] = []
+    
+    if (selectMatch) {
+      const selectClause = selectMatch[1].trim()
+      if (selectClause === '*') {
+        // Include all columns from both tables
+        columns = [
+          ...(tableColumns[actualLeftTable] || []),
+          ...(tableColumns[actualRightTable] || [])
+        ]
+      } else {
+        // Parse specific columns
+        const columnList = selectClause.split(',').map(col => col.trim())
+        columns = columnList.map(col => {
+          // Remove table prefix if present (e.g., "users.id" -> "id")
+          const parts = col.split('.')
+          return parts[parts.length - 1]
+        })
+      }
+    }
+    
+    // Apply LIMIT if present
+    const limitMatch = sql.match(/LIMIT\s+(\d+)/i)
+    if (limitMatch) {
+      const limit = parseInt(limitMatch[1])
+      joinedResults.splice(limit)
+    }
+    
+    return { result: joinedResults, columns }
+    
+  } catch (error) {
+    console.error('Error executing JOIN query:', error)
     return { result: [], columns: [] }
   }
 }

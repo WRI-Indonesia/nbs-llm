@@ -318,6 +318,42 @@ function executeJoinQuery(sql: string, tableData: { [key: string]: any[] }, tabl
   }
 }
 
+// Generate sample data for a table based on its columns
+function generateSampleData(tableData: any): any[] {
+  const columns = tableData.columns || []
+  const sampleRows = []
+  
+  // Generate 3-5 sample rows
+  const rowCount = Math.floor(Math.random() * 3) + 3
+  
+  for (let i = 0; i < rowCount; i++) {
+    const row: any = {}
+    
+    columns.forEach((col: any) => {
+      const colName = col.name.toLowerCase()
+      const colType = col.type?.toLowerCase() || 'varchar'
+      
+      if (colName.includes('id')) {
+        row[col.name] = i + 1
+      } else if (colType.includes('int') || colType.includes('number')) {
+        row[col.name] = Math.floor(Math.random() * 1000) + 1
+      } else if (colType.includes('date') || colType.includes('time')) {
+        row[col.name] = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      } else if (colType.includes('bool')) {
+        row[col.name] = Math.random() > 0.5
+      } else {
+        // String/varchar fields
+        const sampleTexts = ['Sample', 'Test', 'Example', 'Demo', 'Data', 'Record', 'Item', 'Entry']
+        row[col.name] = `${sampleTexts[Math.floor(Math.random() * sampleTexts.length)]} ${i + 1}`
+      }
+    })
+    
+    sampleRows.push(row)
+  }
+  
+  return sampleRows
+}
+
 // Simulate SQL execution on schema data
 function simulateSQLExecution(sql: string, schemaData: any): { result: any[], columns: string[] } {
   try {

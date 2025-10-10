@@ -2,6 +2,24 @@
  * Core type definitions for the Flow application
  */
 
+// NextAuth type extensions
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    };
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+  }
+}
+
 // Column types for TableNode
 export type ColumnType = "text" | "number" | "boolean";
 

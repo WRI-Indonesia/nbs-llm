@@ -45,9 +45,9 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    async session({ session, user }) {
-      if (user && session.user) {
-        session.user.id = user.id
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string
       }
       return session
     },

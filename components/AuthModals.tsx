@@ -9,7 +9,7 @@ import { LogIn, UserPlus, Mail, Lock, User, AlertCircle } from "lucide-react"
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: (sessionId: string, user: { name?: string; email?: string }) => void
+  onSuccess: (user: { name?: string; email?: string }) => void
 }
 
 export function SignInModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
@@ -36,13 +36,9 @@ export function SignInModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       }
 
       const data = await response.json()
-      const sessionId = data.sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       
-      // Store sessionId in localStorage
-      localStorage.setItem('sessionId', sessionId)
-      localStorage.setItem('user', JSON.stringify(data.user))
-      
-      onSuccess(sessionId, data.user)
+      // Session is now stored in cookies, no need for localStorage
+      onSuccess(data.user)
       onClose()
     } catch (error: any) {
       setError(error.message || "Something went wrong")
@@ -167,13 +163,9 @@ export function SignUpModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       }
 
       const data = await response.json()
-      const sessionId = data.sessionId || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       
-      // Store sessionId in localStorage
-      localStorage.setItem('sessionId', sessionId)
-      localStorage.setItem('user', JSON.stringify(data.user))
-      
-      onSuccess(sessionId, data.user)
+      // Session is now stored in cookies, no need for localStorage
+      onSuccess(data.user)
       onClose()
     } catch (error: any) {
       setError(error.message || "Something went wrong")

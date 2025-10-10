@@ -10,60 +10,56 @@ export default function AuthButton() {
   const [user, setUser] = useState<{ name?: string; email?: string } | null>(null)
   const [showSignIn, setShowSignIn] = useState(false)
   const [showSignUp, setShowSignUp] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
 
   useEffect(() => {
-    // Check for existing sessionId in localStorage
-    const storedSessionId = localStorage.getItem('etl-ai-sessionId')
-    const storedUser = localStorage.getItem('user')
-    
-    if (storedSessionId && storedUser) {
-      setSessionId(storedSessionId)
-      setUser(JSON.parse(storedUser))
-      setIsLoggedIn(true)
-      
-      // Verify session with server
-      verifySession(storedSessionId)
-    }
+    // Check session from cookies
+    checkSession()
   }, [])
 
-  const verifySession = async (sessionId: string) => {
+  const checkSession = async () => {
     try {
-      const response = await fetch(`/api/auth/session?sessionId=${sessionId}`)
+      const response = await fetch('/api/auth/session')
       if (response.ok) {
         const data = await response.json()
         if (data.user) {
           setUser(data.user)
           setIsLoggedIn(true)
         } else {
-          // Session expired, clear localStorage
-          localStorage.removeItem('etl-ai-sessionId')
-          localStorage.removeItem('user')
           setIsLoggedIn(false)
           setUser(null)
-          setSessionId(null)
         }
       }
     } catch (error) {
-      console.error('Session verification failed:', error)
+      console.error('Session check failed:', error)
+      setIsLoggedIn(false)
+      setUser(null)
     }
   }
 
-  const handleAuthSuccess = (newSessionId: string, userData: { name?: string; email?: string }) => {
-    setSessionId(newSessionId)
+  const handleAuthSuccess = (userData: { name?: string; email?: string }) => {
     setUser(userData)
     setIsLoggedIn(true)
     setShowSignIn(false)
     setShowSignUp(false)
+    // Refresh the page to update the Flow component
+    window.location.reload()
   }
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      // Clear the session cookie by making a request to logout endpoint
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch (error) {
+      console.error('Logout failed:', error)
+    }
+    
+    // Clear guest session data
     localStorage.removeItem('etl-ai-sessionId')
-    localStorage.removeItem('etl-ai-schemaId')
-    localStorage.removeItem('user')
+    
     setIsLoggedIn(false)
     setUser(null)
-    setSessionId(null)
+    // Refresh the page to update the Flow component
+    window.location.reload()
   }
 
   const handleSignInClick = () => {

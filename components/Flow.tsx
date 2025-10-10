@@ -305,37 +305,34 @@ export default function Flow() {
         setLastAction('Initializing')
         
         try {
-            // Generate UUID for sessionId if not logged in, or use DB sessionId if logged in
-            let currentSessionId: string = localStorage.getItem('etl-ai-sessionId') || ''
-            
             // Check if user is logged in first
             let isAuthenticated = false
             let userId = null
+            let currentSessionId: string = ''
             
             try {
-                // Try to get session info from auth endpoint
+                // Try to get session info from auth endpoint (reads from cookies)
                 const authResponse = await fetch('/api/auth/session')
                 if (authResponse.ok) {
                     const authData = await authResponse.json()
                     if (authData.user) {
                         isAuthenticated = true
                         userId = authData.user.id
+                        currentSessionId = userId // Use userId as sessionId for logged-in users
                     }
                 }
             } catch (err) {
-                // User not logged in, continue with localStorage
+                // User not logged in, continue with guest session
             }
             
             if (isAuthenticated && userId) {
                 // User is logged in - use userId as sessionId
-                currentSessionId = userId
-                localStorage.setItem('etl-ai-sessionId', currentSessionId)
                 setBusyLabel('Loading from database…')
                 setLastAction('Loading from database')
             } else {
-                // User not logged in - generate UUID sessionId
-                if (!currentSessionId) {
-                    currentSessionId = uuidv4()
+                // User not logged in - generate UUID sessionId for guest
+                currentSessionId = localStorage.getItem('etl-ai-sessionId') || uuidv4()
+                if (!localStorage.getItem('etl-ai-sessionId')) {
                     localStorage.setItem('etl-ai-sessionId', currentSessionId)
                 }
                 setBusyLabel('Loading from database…')

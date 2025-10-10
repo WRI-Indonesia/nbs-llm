@@ -4,27 +4,38 @@ import prisma from '@/lib/prisma'
 // GET /api/schemas - List all schemas for a session
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const sessionId = searchParams.get('sessionId')
+    // Get session token from cookies
+    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
+                        request.cookies.get('__Secure-next-auth.session-token')?.value
+
+    // Try to find user from session token
+    let userId = null
+    let sessionId = null
+    
+    if (sessionToken) {
+      try {
+        const session = await prisma.session.findUnique({
+          where: { sessionToken },
+          include: { user: true }
+        })
+
+        if (session && session.expires > new Date()) {
+          userId = session.userId
+          sessionId = userId // Use userId as sessionId for logged-in users
+        }
+      } catch (sessionError) {
+        console.log('No valid session found')
+      }
+    }
+
+    // If no valid session, check for guest sessionId in query params
+    if (!sessionId) {
+      const { searchParams } = new URL(request.url)
+      sessionId = searchParams.get('sessionId')
+    }
 
     if (!sessionId) {
       return NextResponse.json({ error: 'Session ID required' }, { status: 400 })
-    }
-
-    // Try to find session, but don't require it for non-logged-in users
-    let userId = null
-    try {
-      const session = await prisma.session.findUnique({
-        where: { sessionToken: sessionId },
-        include: { user: true }
-      })
-
-      if (session && session.expires > new Date()) {
-        userId = session.userId
-      }
-    } catch (sessionError) {
-      // Session not found or expired, continue with userId = null
-      console.log('No valid session found, using sessionId only')
     }
 
     // Find schemas by sessionId (works for both logged-in and non-logged-in users)
@@ -57,33 +68,41 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { sessionId, versionId, graphJson } = body
 
-    if (!sessionId || !graphJson) {
+    // Get session token from cookies
+    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
+                        request.cookies.get('__Secure-next-auth.session-token')?.value
+
+    // Try to find user from session token
+    let userId = null
+    let actualSessionId = sessionId
+    
+    if (sessionToken) {
+      try {
+        const session = await prisma.session.findUnique({
+          where: { sessionToken },
+          include: { user: true }
+        })
+
+        if (session && session.expires > new Date()) {
+          userId = session.userId
+          actualSessionId = userId // Use userId as sessionId for logged-in users
+        }
+      } catch (sessionError) {
+        console.log('No valid session found, creating schema for guest user')
+      }
+    }
+
+    if (!actualSessionId || !graphJson) {
       return NextResponse.json(
         { error: 'Session ID and graphJson are required' },
         { status: 400 }
       )
     }
 
-    // Try to find session, but don't require it for non-logged-in users
-    let userId = null
-    try {
-      const session = await prisma.session.findUnique({
-        where: { sessionToken: sessionId },
-        include: { user: true }
-      })
-
-      if (session && session.expires > new Date()) {
-        userId = session.userId
-      }
-    } catch (sessionError) {
-      // Session not found or expired, continue with userId = null for guest users
-      console.log('No valid session found, creating schema for guest user')
-    }
-
     // Check if a schema already exists for this session
     const existingSchema = await prisma.schema.findFirst({
       where: {
-        sessionId,
+        sessionId: actualSessionId,
         name: 'default'
       }
     })
@@ -118,7 +137,7 @@ export async function POST(request: NextRequest) {
     const schema = await prisma.schema.create({
       data: {
         userId: userId, // Can be null for non-logged-in users
-        sessionId,
+        sessionId: actualSessionId,
         name: 'default',
         description: 'Flow schema design',
         graphJson,

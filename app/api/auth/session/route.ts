@@ -1,18 +1,19 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const sessionId = searchParams.get('sessionId')
+    // Get session token from cookies
+    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
+                        request.cookies.get('__Secure-next-auth.session-token')?.value
 
-    if (!sessionId) {
+    if (!sessionToken) {
       return NextResponse.json({ user: null })
     }
 
     // Find session in database
     const session = await prisma.session.findUnique({
-      where: { sessionToken: sessionId },
+      where: { sessionToken },
       include: { user: true }
     })
 
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
         email: session.user.email
       }
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Session check error:", error)
     return NextResponse.json({ user: null })
   }

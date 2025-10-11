@@ -1,0 +1,52 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push image to GHCR
+      run: |
+        IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm
+        VERSION=${GITHUB_SHA::7}
+        echo "🔧 Building $IMAGE_ID:latest and $IMAGE_ID:$VERSION"
+        docker build -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
+        echo "🚀 Pushing to GHCR..."
+        docker push $IMAGE_ID:latest
+        docker push $IMAGE_ID:$VERSION
+      
+    - name: Deploy to VM
+      if: github.ref == 'refs/heads/main'
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.VM_SSH_KEY }}
+        script: |
+          echo "Updating container on lab.ase.or.id..."
+          cd /home/${{ secrets.VM_USER }}/lab-app
+          docker compose pull lab-app
+          docker compose up -d lab-app
+          docker image prune -f

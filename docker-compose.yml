@@ -2,7 +2,7 @@ services:
   nbs-llm:
     image: ghcr.io/wri-indonesia/nbs-llm:latest
     container_name: nbs-llm
-    restart: unless-stopped
+    restart: always
     env_file: 
       - .env.production
     expose:

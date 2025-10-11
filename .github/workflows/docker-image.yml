@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
 
+    env:
+      DOCKER_BUILDKIT: 1
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -28,12 +31,21 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Debug secret visibility
+      run: echo "Open AI key length: ${#OPENAI_API_KEY}"
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
     - name: Build and push image to GHCR
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm
         VERSION=${GITHUB_SHA::7}
         echo "🔧 Building $IMAGE_ID:latest and $IMAGE_ID:$VERSION"
-        docker build -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
+        docker build \
+          --secret id=openai_api_key,env=OPENAI_API_KEY \
+          -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
         echo "🚀 Pushing to GHCR..."
         docker push $IMAGE_ID:latest
         docker push $IMAGE_ID:$VERSION
@@ -53,9 +65,9 @@ jobs:
           cat > .env.production <<EOF
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           NODE_ENV=production
-          NEXT_PUBLIC_APP_URL=https://llm.wri-indonesia.or.id
-          EMBED_MODEL_NAME=text-embedding-3-large
-          CHAT_MODEL=gpt-4o-mini
+          NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }}
+          EMBED_MODEL_NAME=${{ secrets.EMBED_MODEL_NAME }}
+          CHAT_MODEL=${{ secrets.CHAT_MODEL }}
           DATABASE_URL=${{ secrets.DATABASE_URL }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}

@@ -1,0 +1,14 @@
+services:
+  nbs-llm:
+    image: ghcr.io/wri-indonesia/nbs-llm:latest
+    container_name: nbs-llm
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "3000"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

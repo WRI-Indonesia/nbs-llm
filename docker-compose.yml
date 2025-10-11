@@ -3,7 +3,8 @@ services:
     image: ghcr.io/wri-indonesia/nbs-llm:latest
     container_name: nbs-llm
     restart: unless-stopped
-    env_file: .env
+    env_file: 
+      - .env.production
     expose:
       - "3000"
     networks:

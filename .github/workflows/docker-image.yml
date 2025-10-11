@@ -31,11 +31,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Debug secret visibility
-      run: echo "Open AI key length: ${#OPENAI_API_KEY}"
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
     - name: Build and push image to GHCR
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

@@ -32,7 +32,7 @@ jobs:
         IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm
         VERSION=${GITHUB_SHA::7}
         echo "🔧 Building $IMAGE_ID:latest and $IMAGE_ID:$VERSION"
-        docker build -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
+        docker build --build-arg OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
         echo "🚀 Pushing to GHCR..."
         docker push $IMAGE_ID:latest
         docker push $IMAGE_ID:$VERSION

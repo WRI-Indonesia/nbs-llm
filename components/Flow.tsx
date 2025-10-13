@@ -637,7 +637,6 @@ export default function Flow() {
         ; (async () => {
             await fetchGraph()
         })()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
     
     // Database mode only - no toggle needed

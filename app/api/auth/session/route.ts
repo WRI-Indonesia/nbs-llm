@@ -14,7 +14,13 @@ export async function GET(request: NextRequest) {
     // Find session in database
     const session = await prisma.session.findUnique({
       where: { sessionToken },
-      include: { user: true }
+      include: { 
+        user: {
+          include: {
+            organization: true
+          }
+        }
+      }
     })
 
     if (!session || session.expires < new Date()) {
@@ -25,7 +31,12 @@ export async function GET(request: NextRequest) {
       user: {
         id: session.user.id,
         name: session.user.name,
-        email: session.user.email
+        email: session.user.email,
+        image: session.user.image,
+        emailVerified: session.user.emailVerified,
+        organizationId: session.user.organizationId,
+        organization: session.user.organization,
+        createdAt: session.user.createdAt
       }
     })
   } catch (error: unknown) {

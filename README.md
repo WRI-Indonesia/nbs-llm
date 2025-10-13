@@ -96,6 +96,40 @@ npm run dev
 
 4. **Click "Ask AI" in the playground** - the AI will automatically index your schema and answer questions!
 
+### Email Verification Setup (Required for User Authentication)
+
+To enable email verification for user accounts:
+
+1. **Configure SMTP Settings:**
+   - For Gmail: Use App Password (not your regular password)
+   - For other providers: Use appropriate SMTP settings
+
+2. **Add Email Environment Variables:**
+```bash
+echo 'SMTP_HOST="smtp.gmail.com"' >> .env
+echo 'SMTP_PORT="587"' >> .env
+echo 'SMTP_SECURE="false"' >> .env
+echo 'SMTP_USER="your-email@gmail.com"' >> .env
+echo 'SMTP_PASS="your-app-password"' >> .env
+echo 'SMTP_FROM="your-email@gmail.com"' >> .env
+```
+
+3. **Gmail App Password Setup:**
+   - Go to Google Account settings
+   - Enable 2-factor authentication
+   - Generate an App Password for this application
+   - Use the App Password as `SMTP_PASS`
+
+4. **Restart the development server:**
+```bash
+npm run dev
+```
+
+5. **Test email verification:**
+   - Sign up for a new account
+   - Check your email for verification link
+   - Click the link to verify your account
+
 📖 **Full database setup guide:** See [PRISMA_SETUP.md](./PRISMA_SETUP.md)
 
 ## 📚 Documentation
@@ -259,6 +293,22 @@ DATABASE_URL="postgresql://user:pass@host:5432/db"
 OPENAI_API_KEY="sk-your-openai-api-key"
 EMBED_MODEL_NAME="text-embedding-3-large"
 CHAT_MODEL="gpt-4o-mini"
+
+# Required for authentication
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-key-here"
+
+# Required for Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+
+# Required for email verification
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+SMTP_SECURE="false"
+SMTP_USER="your-email@gmail.com"
+SMTP_PASS="your-app-password"
+SMTP_FROM="your-email@gmail.com"
 
 # Optional
 NEXT_PUBLIC_APP_URL="https://your-domain.com"

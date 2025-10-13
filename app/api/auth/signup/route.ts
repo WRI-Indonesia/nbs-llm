@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import prisma from "@/lib/prisma"
 import { v4 as uuidv4 } from "uuid"
+import { emailService } from "@/lib/email"
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, email, password } = await request.json()
+    const { name, email, password, organizationId } = await request.json()
 
     if (!email || !password) {
       return NextResponse.json(
@@ -29,12 +30,20 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
+    // Generate verification token
+    const verificationToken = uuidv4()
+
     // Create user
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        password: hashedPassword
+        password: hashedPassword,
+        emailVerificationToken: verificationToken,
+        ...(organizationId && { organizationId })
+      },
+      include: {
+        organization: true
       }
     })
 
@@ -67,6 +76,20 @@ export async function POST(request: NextRequest) {
       maxAge: 30 * 24 * 60 * 60, // 30 days
       path: '/'
     })
+
+    // Send verification email
+    const verificationUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${verificationToken}`
+    
+    try {
+      await emailService.sendEmail({
+        to: user.email,
+        subject: 'Verify Your Email - Flow Schema Designer',
+        html: emailService.generateVerificationEmailHtml(user.name || 'User', verificationUrl)
+      })
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError)
+      // Don't fail the signup if email sending fails
+    }
 
     return response
   } catch (error: unknown) {

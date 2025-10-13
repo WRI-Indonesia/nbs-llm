@@ -56,6 +56,30 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
       }
       return token
+    },
+    async signIn({ user, account, profile }) {
+      // Always allow sign in, we'll handle verification in events
+      return true
+    }
+  },
+  events: {
+    async signIn({ user, account, profile, isNewUser }) {
+      // For Google OAuth users, mark email as verified
+      if (account?.provider === 'google') {
+        console.log('Google OAuth signIn event triggered for user:', user.id, user.email, 'isNewUser:', isNewUser)
+        try {
+          const result = await prisma.user.update({
+            where: { id: user.id },
+            data: { 
+              emailVerified: new Date(),
+              emailVerificationToken: null
+            }
+          })
+          console.log('Successfully updated Google user verification:', result.email, result.emailVerified)
+        } catch (error) {
+          console.error('Failed to update Google user verification:', error)
+        }
+      }
     }
   },
   secret: process.env.NEXTAUTH_SECRET,

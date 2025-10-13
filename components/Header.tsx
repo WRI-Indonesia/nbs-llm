@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { ArrowRight, Database, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import AuthButton from "@/components/AuthButton"
+import UserDropdown from "@/components/UserDropdown"
 
 export default function Header() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -65,7 +66,7 @@ export default function Header() {
               </Button>
             </Link>
           )}
-          <AuthButton />
+          {!isLoading && isLoggedIn ? <UserDropdown /> : <AuthButton />}
         </nav>
       </div>
     </header>

@@ -6,7 +6,7 @@ services:
     env_file: 
       - .env.production
     expose:
-      - "3000"
+      - "3000:3000"
     networks:
       - proxy
 

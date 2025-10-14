@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus, Database, Calendar, Trash2, Play, FileText, Sparkles } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, Database, Calendar, Trash2, Play, FileText, Sparkles, Globe, Users, Lock } from "lucide-react"
 import { toast } from 'sonner'
 import Link from 'next/link'
 import Header from "@/components/Header"
@@ -130,6 +131,7 @@ export default function SchemaSelectionPage() {
   const [newSchemaName, setNewSchemaName] = useState('')
   const [newSchemaDescription, setNewSchemaDescription] = useState('')
   const [schemaTemplate, setSchemaTemplate] = useState<'blank' | 'sample'>('blank')
+  const [schemaVisibility, setSchemaVisibility] = useState<'PUBLIC' | 'INTERNAL' | 'PRIVATE'>('PRIVATE')
   const [creating, setCreating] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
 
@@ -199,7 +201,8 @@ export default function SchemaSelectionPage() {
         body: JSON.stringify({
           name: newSchemaName.trim(),
           description: newSchemaDescription.trim() || null,
-          graphJson: graphJson
+          graphJson: graphJson,
+          visibility: schemaVisibility
         })
       })
 
@@ -259,6 +262,7 @@ export default function SchemaSelectionPage() {
       setNewSchemaName('')
       setNewSchemaDescription('')
       setSchemaTemplate('blank')
+      setSchemaVisibility('PRIVATE')
       setNameError(null)
     }
   }
@@ -347,6 +351,40 @@ export default function SchemaSelectionPage() {
                   placeholder="Brief description of this schema"
                   className="w-full"
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Visibility</label>
+                <Select value={schemaVisibility} onValueChange={(value: any) => setSchemaVisibility(value)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PRIVATE">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-4 w-4" />
+                        Private - Only you can see this schema
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="INTERNAL">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Internal - Only organization members can see this schema
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="PUBLIC">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-4 w-4" />
+                        Public - Anyone can see this schema
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {schemaVisibility === 'PRIVATE' && 'Only you can access this schema'}
+                  {schemaVisibility === 'INTERNAL' && 'Members of your organization can access this schema'}
+                  {schemaVisibility === 'PUBLIC' && 'Anyone can view this schema'}
+                </p>
               </div>
 
               <div>

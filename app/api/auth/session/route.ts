@@ -1,42 +1,39 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
   try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
-                        request.cookies.get('__Secure-next-auth.session-token')?.value
+    // Use NextAuth's built-in session handling
+    const session = await getServerSession(authOptions)
 
-    if (!sessionToken) {
+    if (!session?.user) {
       return NextResponse.json({ user: null })
     }
 
-    // Find session in database
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      include: { 
-        user: {
-          include: {
-            organization: true
-          }
-        }
+    // Get additional user data from database if needed
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      include: {
+        organization: true
       }
     })
 
-    if (!session || session.expires < new Date()) {
+    if (!user) {
       return NextResponse.json({ user: null })
     }
 
     return NextResponse.json({
       user: {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
-        emailVerified: session.user.emailVerified,
-        organizationId: session.user.organizationId,
-        organization: session.user.organization,
-        createdAt: session.user.createdAt
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        emailVerified: user.emailVerified,
+        organizationId: user.organizationId,
+        organization: user.organization,
+        createdAt: user.createdAt
       }
     })
   } catch (error: unknown) {

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-// Protected routes that require email verification
+// Protected routes that require authentication
 const protectedRoutes = [
   '/schemas',
   '/profile',
+  '/blogs',
   '/api/schemas',
   '/api/user',
-  '/api/organizations'
+  '/api/organizations',
+  '/api/blogs'
 ]
 
 // Routes that don't require verification
@@ -19,11 +21,27 @@ const publicRoutes = [
   '/auth'
 ]
 
+// Blog routes that should be public (viewing public blogs)
+const publicBlogRoutes = [
+  '/api/blogs$', // GET /api/blogs (list public blogs)
+  '/api/blogs/[^/]+$' // GET /api/blogs/[slug] (view specific blog)
+]
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Skip middleware for public routes
   if (publicRoutes.some(route => pathname.startsWith(route))) {
+    return NextResponse.next()
+  }
+
+  // Check if it's a public blog route (GET requests to view blogs)
+  const isPublicBlogRoute = publicBlogRoutes.some(route => {
+    const regex = new RegExp(route.replace(/\[.*?\]/g, '[^/]+'))
+    return regex.test(pathname) && request.method === 'GET'
+  })
+
+  if (isPublicBlogRoute) {
     return NextResponse.next()
   }
 

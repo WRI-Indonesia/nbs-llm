@@ -6,7 +6,10 @@ import prisma from "@/lib/prisma"
 import bcrypt from "bcryptjs"
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as any,
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -48,40 +51,66 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string
+        session.user.emailVerified = token.emailVerified as Date
       }
       return session
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account, profile }) {
+      // Initial sign in
       if (user) {
         token.id = user.id
+        token.emailVerified = (user as any).emailVerified
       }
+      
+      // Handle OAuth sign in
+      if (account && profile) {
+        try {
+          // Check if user exists in database
+          let dbUser = await prisma.user.findUnique({
+            where: { email: profile.email || user.email || '' }
+          })
+
+          if (!dbUser) {
+            // Create new user
+            dbUser = await prisma.user.create({
+              data: {
+                email: profile.email || user.email || '',
+                name: profile.name || user.name || null,
+                image: (profile as any).picture || user.image || null,
+                emailVerified: new Date(), // OAuth users are automatically verified
+              }
+            })
+          } else {
+            // Update existing user with OAuth data
+            dbUser = await prisma.user.update({
+              where: { id: dbUser.id },
+              data: {
+                name: profile.name || user.name || null,
+                image: (profile as any).picture || user.image || null,
+                emailVerified: new Date(),
+                emailVerificationToken: null
+              }
+            })
+          }
+
+          token.id = dbUser.id
+          token.emailVerified = dbUser.emailVerified
+        } catch (error) {
+          console.error('Error handling OAuth user:', error)
+        }
+      }
+
       return token
     },
     async signIn({ user, account, profile }) {
-      // Always allow sign in, we'll handle verification in events
+      // Always allow sign in
       return true
     }
   },
-  events: {
-    async signIn({ user, account, profile, isNewUser }) {
-      // For Google OAuth users, mark email as verified
-      if (account?.provider === 'google') {
-        console.log('Google OAuth signIn event triggered for user:', user.id, user.email, 'isNewUser:', isNewUser)
-        try {
-          const result = await prisma.user.update({
-            where: { id: user.id },
-            data: { 
-              emailVerified: new Date(),
-              emailVerificationToken: null
-            }
-          })
-          console.log('Successfully updated Google user verification:', result.email, result.emailVerified)
-        } catch (error) {
-          console.error('Failed to update Google user verification:', error)
-        }
-      }
-    }
+  session: {
+    strategy: "jwt",
   },
+  debug: process.env.NODE_ENV === "development",
   secret: process.env.NEXTAUTH_SECRET,
 }
 

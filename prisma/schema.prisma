@@ -23,6 +23,12 @@ model User {
   organizationId String?
   organization  Organization? @relation(fields: [organizationId], references: [id])
   ownedOrganizations Organization[] @relation("OrganizationOwner")
+  memberships   OrganizationMembership[]
+  sentInvitations OrganizationInvitation[]
+  blogs         Blog[]
+  comments      Comment[]
+  blogAccess    BlogAccess[]
+  schemaAccess  SchemaAccess[]
 
   @@map("users")
 }
@@ -73,6 +79,7 @@ model Schema {
   currentVersion Int          @default(1)  // Currently active version
   isActive    Boolean         @default(true)
   graphJson   Json
+  visibility  SchemaVisibility @default(PRIVATE)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   userId      String?
@@ -81,6 +88,7 @@ model Schema {
   versions    SchemaVersion[]
   user        User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schemaAccess SchemaAccess[]
 
   @@unique([userId, name])
   @@unique([sessionId, name])
@@ -144,7 +152,130 @@ model Organization {
   ownerId     String
   owner       User     @relation("OrganizationOwner", fields: [ownerId], references: [id])
   members     User[]
+  memberships OrganizationMembership[]
+  invitations OrganizationInvitation[]
   schemas     Schema[]
+  blogs       Blog[]
 
   @@map("organizations")
+}
+
+model Blog {
+  id            String      @id @default(cuid())
+  title         String
+  slug          String      @unique
+  content       String
+  excerpt       String?
+  visibility    BlogVisibility @default(PUBLIC)
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  authorId      String
+  author        User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  comments      Comment[]
+  blogAccess    BlogAccess[]
+  tags          String[]    @default([])
+  isNotebook    Boolean     @default(false)
+  notebookData  Json?
+
+  @@map("blogs")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  blogId    String
+  blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model BlogAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blogId    String
+  blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, blogId])
+  @@map("blog_access")
+}
+
+enum BlogVisibility {
+  PUBLIC
+  INTERNAL
+  PRIVATE
+}
+
+enum SchemaVisibility {
+  PUBLIC
+  INTERNAL
+  PRIVATE
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+model OrganizationMembership {
+  id             String           @id @default(cuid())
+  userId         String
+  organizationId String
+  role           OrganizationRole @default(MEMBER)
+  joinedAt       DateTime         @default(now())
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_memberships")
+}
+
+model OrganizationInvitation {
+  id             String           @id @default(cuid())
+  email          String
+  organizationId String
+  role           OrganizationRole @default(MEMBER)
+  status         InvitationStatus @default(PENDING)
+  invitedBy      String
+  token          String           @unique
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter        User             @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+
+  @@unique([email, organizationId])
+  @@map("organization_invitations")
+}
+
+model SchemaAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  schemaId  String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schema    Schema   @relation(fields: [schemaId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, schemaId])
+  @@map("schema_access")
 }

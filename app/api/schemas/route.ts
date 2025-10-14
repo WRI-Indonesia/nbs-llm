@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 import prisma from '@/lib/prisma'
+import { SchemaVisibility } from '@prisma/client'
 
 // GET /api/schemas - List all schemas for a session
 export async function GET(request: NextRequest) {
   try {
-    // Get session token from cookies
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    })
+
+    // Get session token from cookies for anonymous users
     const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
                         request.cookies.get('__Secure-next-auth.session-token')?.value
 
-    // Try to find user from session token
-    let userId = null
+    let userId = token?.sub || null
     let sessionId = null
     
-    if (sessionToken) {
+    // For anonymous users, try to find session
+    if (!userId && sessionToken) {
       try {
         const session = await prisma.session.findUnique({
           where: { sessionToken },
@@ -34,144 +41,166 @@ export async function GET(request: NextRequest) {
       sessionId = searchParams.get('sessionId')
     }
 
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Session ID required' }, { status: 400 })
+    // Build where clause based on user's access
+    let whereClause: any = {}
+
+    if (userId) {
+      // Authenticated user can see:
+      // - Their own schemas
+      // - Organization schemas (if member)
+      // - Public schemas
+      // - Private schemas they have access to
+      
+      // Get user's organization
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true }
+      })
+
+      whereClause = {
+        OR: [
+          { userId: userId }, // Own schemas
+          { visibility: SchemaVisibility.PUBLIC }, // Public schemas
+          {
+            AND: [
+              { visibility: SchemaVisibility.INTERNAL },
+              { organizationId: user?.organizationId } // Organization schemas
+            ]
+          },
+          {
+            AND: [
+              { visibility: SchemaVisibility.PRIVATE },
+              { schemaAccess: { some: { userId: userId } } } // Private schemas with access
+            ]
+          }
+        ]
+      }
+    } else if (sessionId) {
+      // Anonymous users can only see their own schemas and public schemas
+      whereClause = {
+        OR: [
+          { sessionId: sessionId }, // Own schemas
+          { visibility: SchemaVisibility.PUBLIC } // Public schemas
+        ]
+      }
+    } else {
+      // No session, return empty array
+      return NextResponse.json({ schemas: [] })
     }
 
-    // Find schemas by sessionId (works for both logged-in and non-logged-in users)
     const schemas = await prisma.schema.findMany({
-      where: { 
-        sessionId: sessionId,
-        ...(userId ? { userId } : {}) // Only filter by userId if we have a valid session
-      },
-      orderBy: { updatedAt: 'desc' },
+      where: whereClause,
       include: {
-        _count: {
-          select: { versions: true }
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
+          }
         }
-      }
+      },
+      orderBy: { updatedAt: 'desc' }
     })
 
     return NextResponse.json({ schemas })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching schemas:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch schemas', message: error.message },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
 
-// POST /api/schemas - Create new schema
+// POST /api/schemas - Create a new schema
 export async function POST(request: NextRequest) {
   try {
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    })
+
     const body = await request.json()
-    const { sessionId, versionId, graphJson } = body
+    const { name, description, graphJson, visibility = SchemaVisibility.PRIVATE, organizationId } = body
 
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
-                        request.cookies.get('__Secure-next-auth.session-token')?.value
-
-    // Try to find user from session token
-    let userId = null
-    let actualSessionId = sessionId
-    
-    if (sessionToken) {
-      try {
-        const session = await prisma.session.findUnique({
-          where: { sessionToken },
-          include: { user: true }
-        })
-
-        if (session && session.expires > new Date()) {
-          userId = session.userId
-          actualSessionId = userId // Use userId as sessionId for logged-in users
-        }
-      } catch (sessionError) {
-        console.log('No valid session found, creating schema for guest user')
-      }
-    }
-
-    if (!actualSessionId || !graphJson) {
+    if (!name || !graphJson) {
       return NextResponse.json(
-        { error: 'Session ID and graphJson are required' },
+        { error: 'Name and graphJson are required' },
         { status: 400 }
       )
     }
 
-    // Check if a schema already exists for this session
+    const userId = token?.sub || null
+    let sessionId = null
+
+    // For anonymous users, generate a session ID
+    if (!userId) {
+      sessionId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    } else {
+      sessionId = userId // Use userId as sessionId for logged-in users
+    }
+
+    // Check if schema name already exists for this user/organization
     const existingSchema = await prisma.schema.findFirst({
       where: {
-        sessionId: actualSessionId,
-        name: 'default'
+        name: name,
+        OR: [
+          { userId: userId },
+          { sessionId: sessionId },
+          { organizationId: organizationId }
+        ]
       }
     })
 
     if (existingSchema) {
-      // Update existing schema instead of creating new one
-      const newVersion = existingSchema.version + 1
-      
-      const schema = await prisma.schema.update({
-        where: { id: existingSchema.id },
-        data: {
-          graphJson,
-          version: newVersion,
-          versions: {
-            create: {
-              version: newVersion,
-              versionId: versionId || `v_${Date.now()}`,
-              graphJson,
-              restoredFrom: null
-            }
-          }
-        },
-        include: {
-          versions: true
-        }
-      })
-
-      return NextResponse.json({ schema, version: newVersion })
+      return NextResponse.json(
+        { error: 'Schema with this name already exists' },
+        { status: 400 }
+      )
     }
 
-    // Create schema with initial version
+    // Create the schema
     const schema = await prisma.schema.create({
       data: {
-        userId: userId, // Can be null for non-logged-in users
-        sessionId: actualSessionId,
-        name: 'default',
-        description: 'Flow schema design',
+        name,
+        description,
         graphJson,
-        version: 1,
-        versions: {
-          create: {
-            version: 1,
-            versionId: versionId || `v_${Date.now()}`,
-            graphJson,
-            restoredFrom: null
-          }
-        }
+        visibility,
+        userId: userId,
+        sessionId: sessionId,
+        organizationId: organizationId
       },
       include: {
-        versions: true
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true
+          }
+        }
       }
     })
 
-    return NextResponse.json({ schema, version: schema.version }, { status: 201 })
-  } catch (error: any) {
+    return NextResponse.json({ schema })
+  } catch (error) {
     console.error('Error creating schema:', error)
-    
-    // Handle unique constraint error
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { error: 'A schema with this name already exists' },
-        { status: 409 }
-      )
-    }
-    
     return NextResponse.json(
-      { error: 'Failed to create schema', message: error.message },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
-

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useState, useEffect } from 'react'
-import { ArrowRight, Database, BookOpen } from "lucide-react"
+import { ArrowRight, Database, BookOpen, FileText, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import AuthButton from "@/components/AuthButton"
 import UserDropdown from "@/components/UserDropdown"
@@ -49,6 +49,24 @@ export default function Header() {
               Docs
             </Button>
           </Link>
+          {/* Only show Blog link for authenticated users */}
+          {!isLoading && isLoggedIn && (
+            <Link href="/blogs">
+              <Button variant="ghost" className="gap-2 hover:bg-green-100 hover:text-green-700 transition-colors">
+                <FileText className="h-4 w-4" />
+                Blog
+              </Button>
+            </Link>
+          )}
+          {/* Only show Organization link for authenticated users */}
+          {!isLoading && isLoggedIn && (
+            <Link href="/organizations/manage">
+              <Button variant="ghost" className="gap-2 hover:bg-purple-100 hover:text-purple-700 transition-colors">
+                <Users className="h-4 w-4" />
+                Organization
+              </Button>
+            </Link>
+          )}
           {/* Only show Playground button for non-authenticated users */}
           {!isLoading && !isLoggedIn && (
             <Link href="/playground">

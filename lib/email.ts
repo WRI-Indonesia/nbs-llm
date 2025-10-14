@@ -37,7 +37,12 @@ class EmailService {
         html,
       })
       
-      console.log('Email sent:', info.messageId)
+      console.log('Email sent successfully:')
+      console.log('- To:', to)
+      console.log('- Subject:', subject)
+      console.log('- Message ID:', info.messageId)
+      console.log('- Response:', info.response)
+      
       return { success: true, messageId: info.messageId }
     } catch (error) {
       console.error('Email sending failed:', error)
@@ -249,6 +254,146 @@ class EmailService {
             
             <div class="footer">
               <p>This email was sent by Flow Schema Designer</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+  }
+
+  generateOrganizationInvitationEmailHtml(
+    email: string,
+    organizationName: string,
+    role: string,
+    invitationUrl: string,
+    inviterName: string
+  ) {
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Organization Invitation</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+              background-color: #f8fafc;
+            }
+            .container {
+              background: white;
+              border-radius: 8px;
+              padding: 40px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+            }
+            .logo {
+              background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+              color: white;
+              padding: 12px 24px;
+              border-radius: 8px;
+              display: inline-block;
+              font-weight: bold;
+              font-size: 18px;
+            }
+            .title {
+              color: #1f2937;
+              font-size: 24px;
+              margin: 20px 0;
+            }
+            .content {
+              color: #4b5563;
+              margin-bottom: 30px;
+            }
+            .button {
+              display: inline-block;
+              background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+              color: white;
+              padding: 12px 24px;
+              text-decoration: none;
+              border-radius: 6px;
+              font-weight: 500;
+              margin: 20px 0;
+            }
+            .footer {
+              margin-top: 40px;
+              padding-top: 20px;
+              border-top: 1px solid #e5e7eb;
+              color: #6b7280;
+              font-size: 14px;
+              text-align: center;
+            }
+            .role-badge {
+              background: #f3f4f6;
+              border: 1px solid #d1d5db;
+              border-radius: 6px;
+              padding: 8px 12px;
+              display: inline-block;
+              font-weight: 500;
+              color: #374151;
+              margin: 10px 0;
+            }
+            .warning {
+              background: #fef3c7;
+              border: 1px solid #f59e0b;
+              border-radius: 6px;
+              padding: 12px;
+              margin: 20px 0;
+              color: #92400e;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">Flow Schema Designer</div>
+              <h1 class="title">You're Invited!</h1>
+            </div>
+            
+            <div class="content">
+              <p>Hi there,</p>
+              
+              <p><strong>${inviterName}</strong> has invited you to join the organization <strong>"${organizationName}"</strong> on Flow Schema Designer.</p>
+              
+              <div class="role-badge">
+                Role: ${role}
+              </div>
+              
+              <p>As a member of this organization, you'll be able to:</p>
+              <ul>
+                <li>Collaborate on database schemas</li>
+                <li>Share schemas with other organization members</li>
+                <li>Access organization-specific resources</li>
+                <li>Participate in team discussions</li>
+              </ul>
+              
+              <div style="text-align: center;">
+                <a href="${invitationUrl}" class="button">Accept Invitation</a>
+              </div>
+              
+              <div class="warning">
+                <strong>Important:</strong> This invitation will expire in 7 days. If you don't accept it within this time, you'll need to request a new invitation.
+              </div>
+              
+              <p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
+              <p style="word-break: break-all; background: #f3f4f6; padding: 8px; border-radius: 4px; font-family: monospace;">
+                ${invitationUrl}
+              </p>
+              
+              <p>If you don't want to join this organization, you can simply ignore this email.</p>
+            </div>
+            
+            <div class="footer">
+              <p>This invitation was sent by Flow Schema Designer</p>
+              <p>If you have any questions, please contact the organization administrator.</p>
             </div>
           </div>
         </body>

@@ -1,11 +1,15 @@
 import Link from "next/link"
-import { ArrowRight, Database, Workflow, Sparkles, MousePointerClick, Pencil, GitBranch, MessageSquare, Save, Eye, Zap, BookOpen, Code2 } from "lucide-react"
+import { ArrowRight, Database, Workflow, Sparkles, MousePointerClick, Pencil, GitBranch, MessageSquare, Save, Eye, Zap, BookOpen, Code2, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Toaster } from "@/components/ui/sonner"
 import Header from "@/components/Header"
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getServerSession(authOptions)
+  
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <Header />
@@ -31,6 +35,14 @@ export default function HomePage() {
                 Get Started <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
+            {session && (
+              <Link href="/blogs">
+                <Button size="lg" variant="outline" className="gap-2">
+                  <FileText className="h-5 w-5" />
+                  Read Blog
+                </Button>
+              </Link>
+            )}
             <Link href="/docs">
               <Button size="lg" variant="outline" className="gap-2">
                 <Code2 className="h-5 w-5" />
@@ -397,6 +409,14 @@ export default function HomePage() {
                 Open Playground
               </Button>
             </Link>
+            {session && (
+              <Link href="/blogs">
+                <Button size="lg" variant="outline" className="gap-2">
+                  <FileText className="h-5 w-5" />
+                  Read Blog
+                </Button>
+              </Link>
+            )}
             <Link href="/docs">
               <Button size="lg" variant="outline" className="gap-2">
                 <BookOpen className="h-5 w-5" />

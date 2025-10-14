@@ -143,7 +143,6 @@ function parseExcelFile(file: File): Promise<{ columns: Column[]; data: any[]; m
 /* --------------------------------- Component --------------------------------- */
 
 export default function TableNode({ id, data }: { id: string; data: TableNodeData }) {
-    const schema = data.schema ?? "public"
     const { table, description, columns, reservedTableNames = [], otherTables = [] } = data
     const [open, setOpen] = React.useState(false)
     const [previewOpen, setPreviewOpen] = React.useState(false)
@@ -236,12 +235,7 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
     return (
         <Card className="relative w-[280px] rounded-xl border-2 border-slate-200 shadow-lg bg-gradient-to-br from-white to-slate-50 hover:shadow-xl hover:border-blue-300 transition-all duration-300 group">
             <CardContent className="p-0">
-                <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
-                    <Badge variant="secondary" className="text-xs gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 border-blue-200">
-                        <Database className="h-3 w-3" />
-                        {schema}
-                    </Badge>
-
+                <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-end bg-gradient-to-r from-slate-50 to-white">
                     <div className="flex items-center gap-1">
                         <Button 
                             size="icon" 
@@ -282,8 +276,8 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                 </Button>
                             </DialogTrigger>
 
-                            <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
-                                <DialogHeader className="space-y-3 pb-4 border-b">
+                            <DialogContent className="sm:max-w-[900px] max-h-[90vh] flex flex-col z-[1100]">
+                                <DialogHeader className="space-y-3 pb-4 border-b flex-shrink-0">
                                     <DialogTitle className="text-2xl font-bold flex items-center gap-2">
                                         <Database className="h-6 w-6 text-blue-600" />
                                         Edit Table Schema
@@ -293,59 +287,60 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                     </p>
                                 </DialogHeader>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
-                                    <div className="md:col-span-1">
-                                        <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
-                                            Table Name
-                                        </label>
-                                        <Input 
-                                            value={draftTable} 
-                                            onChange={(e) => setDraftTable(e.target.value)} 
-                                            className={`${badTable ? "border-red-500 focus-visible:ring-red-500" : "border-slate-300"} h-10`}
-                                            placeholder="e.g., users, products"
-                                        />
-                                        {dupTable && (
-                                            <div className="flex items-center gap-1 mt-1.5 text-red-600">
-                                                <span className="text-xs font-medium">⚠️ Name must be unique</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
-                                            Description <span className="text-red-500">*</span>
-                                        </label>
-                                        <Textarea 
-                                            value={draftDesc} 
-                                            onChange={(e) => setDraftDesc(e.target.value)} 
-                                            placeholder="Brief description of what this table stores"
-                                            className={`${!draftDesc.trim() ? "border-red-500 focus-visible:ring-red-500" : "border-slate-300"} min-h-[40px]`}
-                                            rows={2}
-                                        />
-                                        {!draftDesc.trim() && (
-                                            <div className="flex items-center gap-1 mt-1.5 text-red-600">
-                                                <span className="text-xs font-medium">⚠️ Description is required</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="border-t pt-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-lg font-semibold text-slate-900">Columns</h3>
-                                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                                            <span className="flex items-center gap-1">
-                                                <KeyRound className="h-3 w-3 text-yellow-600" />
-                                                Primary Key
-                                            </span>
-                                            <span className="flex items-center gap-1">
-                                                <Link2 className="h-3 w-3 text-blue-600" />
-                                                Foreign Key
-                                            </span>
+                                <div className="flex-1 overflow-hidden flex flex-col">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4 flex-shrink-0">
+                                        <div className="md:col-span-1">
+                                            <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
+                                                Table Name
+                                            </label>
+                                            <Input 
+                                                value={draftTable} 
+                                                onChange={(e) => setDraftTable(e.target.value)} 
+                                                className={`${badTable ? "border-red-500 focus-visible:ring-red-500" : "border-slate-300"} h-10`}
+                                                placeholder="e.g., users, products"
+                                            />
+                                            {dupTable && (
+                                                <div className="flex items-center gap-1 mt-1.5 text-red-600">
+                                                    <span className="text-xs font-medium">⚠️ Name must be unique</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="text-sm font-semibold text-slate-700 mb-1.5 block">
+                                                Description <span className="text-red-500">*</span>
+                                            </label>
+                                            <Textarea 
+                                                value={draftDesc} 
+                                                onChange={(e) => setDraftDesc(e.target.value)} 
+                                                placeholder="Brief description of what this table stores"
+                                                className={`${!draftDesc.trim() ? "border-red-500 focus-visible:ring-red-500" : "border-slate-300"} min-h-[40px]`}
+                                                rows={2}
+                                            />
+                                            {!draftDesc.trim() && (
+                                                <div className="flex items-center gap-1 mt-1.5 text-red-600">
+                                                    <span className="text-xs font-medium">⚠️ Description is required</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                                    <div className="border-t pt-4 flex-shrink-0">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-lg font-semibold text-slate-900">Columns</h3>
+                                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                <span className="flex items-center gap-1">
+                                                    <KeyRound className="h-3 w-3 text-yellow-600" />
+                                                    Primary Key
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <Link2 className="h-3 w-3 text-blue-600" />
+                                                    Foreign Key
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3 flex-1 overflow-y-auto pr-2">
                                     {draftCols.map((col, i) => {
                                         const isDup = dupColName(col.name, i)
                                         const empty = !col.name.trim()
@@ -487,18 +482,19 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                             </div>
                                         )
                                     })}
-                                    <Button 
-                                        type="button" 
-                                        variant="outline" 
-                                        onClick={addCol} 
-                                        className="w-full gap-2 border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 h-12 text-slate-600 hover:text-blue-700"
-                                    >
-                                        <Plus className="h-5 w-5" />
-                                        Add Column
-                                    </Button>
+                                        <Button 
+                                            type="button" 
+                                            variant="outline" 
+                                            onClick={addCol} 
+                                            className="w-full gap-2 border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 h-12 text-slate-600 hover:text-blue-700"
+                                        >
+                                            <Plus className="h-5 w-5" />
+                                            Add Column
+                                        </Button>
+                                    </div>
                                 </div>
 
-                                <DialogFooter className="gap-2 pt-4 border-t">
+                                <DialogFooter className="gap-2 pt-4 border-t flex-shrink-0">
                                     <Button 
                                         variant="ghost" 
                                         onClick={() => setOpen(false)}
@@ -564,10 +560,10 @@ export default function TableNode({ id, data }: { id: string; data: TableNodeDat
                                 )}
                             </div>
                             <div className="flex flex-col leading-tight">
-                                <div className="text-sm font-medium truncate text-slate-800" title={col.name}>{col.name}</div>
+                                <div className="text-sm font-medium text-slate-800 truncate max-w-[210px]" title={col.name}>{col.name}</div>
                                 <div className="text-xs text-slate-500 font-mono">{col.type}</div>
                                 {col.description && (
-                                    <div className="text-xs text-slate-600 mt-0.5 line-clamp-1" title={col.description}>
+                                    <div className="text-xs text-slate-600 mt-0.5 max-w-[210px] truncate" title={col.description}>
                                         {col.description}
                                     </div>
                                 )}

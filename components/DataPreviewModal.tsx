@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogOverlay, Dialog
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ChevronLeft, ChevronRight, Search, Database, Eye } from "lucide-react"
 
 interface DataPreviewModalProps {
@@ -65,9 +66,9 @@ export default function DataPreviewModal({
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogPortal>
-        <DialogOverlay className="z-[1000]" />
-        <DialogContent className="sm:max-w-[90vw] max-h-[90vh] overflow-hidden z-[1001]">
-        <DialogHeader className="space-y-3 pb-4 border-b">
+        <DialogOverlay className="z-[1100]" />
+        <DialogContent className="sm:max-w-[90vw] max-h-[90vh] flex flex-col z-[1101]">
+        <DialogHeader className="space-y-3 pb-4 border-b flex-shrink-0">
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             <Eye className="h-6 w-6 text-blue-600" />
             Data Preview: {tableName}
@@ -85,9 +86,9 @@ export default function DataPreviewModal({
           </div>
         </DialogHeader>
 
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col flex-1 overflow-hidden">
           {/* Search Bar */}
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 flex-shrink-0">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
@@ -110,40 +111,33 @@ export default function DataPreviewModal({
           </div>
 
           {/* Table */}
-          <div className="flex-1 overflow-auto border rounded-lg">
+          <div className="flex-1 overflow-auto border rounded-lg min-h-0">
             {currentData.length > 0 ? (
-              <div className="min-w-full">
-                {/* Table Header */}
-                <div className="sticky top-0 bg-slate-50 border-b">
-                  <div className="grid gap-4 p-3" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(120px, 1fr))` }}>
+              <Table>
+                <TableHeader className="sticky top-0 bg-slate-50">
+                  <TableRow>
                     {columns.map((column, index) => (
-                      <div key={index} className="font-semibold text-slate-700 text-sm truncate">
+                      <TableHead key={index} className="font-semibold text-slate-700 text-sm">
                         {column}
-                      </div>
+                      </TableHead>
                     ))}
-                  </div>
-                </div>
-
-                {/* Table Body */}
-                <div className="divide-y">
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {currentData.map((row, rowIndex) => (
-                    <div 
-                      key={rowIndex} 
-                      className="grid gap-4 p-3 hover:bg-slate-50 transition-colors"
-                      style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(120px, 1fr))` }}
-                    >
+                    <TableRow key={rowIndex} className="hover:bg-slate-50 transition-colors">
                       {columns.map((column, colIndex) => (
-                        <div key={colIndex} className="text-sm text-slate-600 truncate">
+                        <TableCell key={colIndex} className="text-sm text-slate-600">
                           {row[column] !== null && row[column] !== undefined 
                             ? String(row[column]) 
                             : <span className="text-slate-400 italic">null</span>
                           }
-                        </div>
+                        </TableCell>
                       ))}
-                    </div>
+                    </TableRow>
                   ))}
-                </div>
-              </div>
+                </TableBody>
+              </Table>
             ) : (
               <div className="flex flex-col items-center justify-center h-64 text-slate-500">
                 <Database className="h-12 w-12 mb-4 text-slate-300" />
@@ -157,7 +151,7 @@ export default function DataPreviewModal({
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t">
+            <div className="flex items-center justify-between pt-4 border-t flex-shrink-0">
               <div className="text-sm text-slate-600">
                 Showing {startIndex + 1} to {Math.min(endIndex, filteredData.length)} of {filteredData.length} rows
               </div>

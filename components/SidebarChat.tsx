@@ -316,7 +316,7 @@ export default function SidebarChat({
                                         <span className="font-medium text-purple-900">Generated SQL</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
                                         <pre>{data.sql}</pre>
                                     </div>
@@ -334,7 +334,7 @@ export default function SidebarChat({
                                         <span className="text-sm text-green-700">({data.resultCount} rows)</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     {data.result && data.result.length > 0 ? (
                                         <div className="space-y-2">
                                             <div className="text-sm text-slate-600 mb-2">
@@ -385,7 +385,7 @@ export default function SidebarChat({
                                         <span className="text-sm text-blue-700">({data.used.length} items)</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="space-y-2">
                                         {data.used.map((item: AIRagItem, idx: number) => (
                                             <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
@@ -429,7 +429,7 @@ export default function SidebarChat({
                                         <span className="font-medium text-indigo-900">Summary</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="prose prose-sm max-w-none text-slate-700">
                                         {data.summary.split('\n').map((line: string, idx: number) => (
                                             <p key={idx} className="mb-2 last:mb-0">
@@ -450,7 +450,7 @@ export default function SidebarChat({
                                         <span className="font-medium text-orange-900">SQL Reasoning</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="space-y-4">
                                         {data.reasoning.tables && (
                                             <div>
@@ -520,7 +520,7 @@ export default function SidebarChat({
                                         <span className="font-medium text-teal-900">Suggestions</span>
                                     </div>
                                 </AccordionTrigger>
-                                <AccordionContent className="px-4 pb-4">
+                                <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="space-y-3">
                                         {Object.entries(data.suggestions).map(([key, value]: [string, string]) => (
                                             <div key={key} className="p-3 bg-slate-50 rounded-lg">
@@ -593,11 +593,11 @@ export default function SidebarChat({
     return (
         <aside
             aria-label="AI Chat Sidebar"
-            className={`fixed inset-y-0 right-0 bg-gradient-to-br from-white via-purple-50/30 to-indigo-50/30 backdrop-blur-xl z-[920] grid [grid-template-rows:auto_1fr_auto] transition-[width] ease-[cubic-bezier(.4,0,.2,1)] duration-300 ${open ? "w-[420px] border-l border-purple-200/50 shadow-[-10px_0_40px_rgba(139,92,246,0.1)]" : "w-0"
+            className={`fixed inset-y-0 right-0 bg-gradient-to-br from-white via-purple-50/30 to-indigo-50/30 backdrop-blur-xl z-[920] grid [grid-template-rows:auto_1fr_auto] transition-[width] ease-[cubic-bezier(.4,0,.2,1)] duration-300 ${open ? "w-[600px] border-l border-purple-200/50 shadow-[-10px_0_40px_rgba(139,92,246,0.1)]" : "w-0"
                 }`}
         >
             {/* Modern Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-purple-200/30 bg-gradient-to-r from-white/95 via-purple-50/95 to-indigo-50/95 backdrop-blur-sm">
+            <div className="flex items-center justify-between px-4 py-3 mt-[75px] border-b border-purple-200/30 bg-gradient-to-r from-white/95 via-purple-50/95 to-indigo-50/95 backdrop-blur-sm">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl shadow-sm">
                         <MessageSquare className="h-4 w-4 text-white" />
@@ -664,7 +664,7 @@ export default function SidebarChat({
                     if (m.role === "user") {
                         return (
                             <div key={m.id} className="flex justify-end">
-                                <div className="max-w-[280px] bg-gradient-to-br from-purple-500 to-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-3 text-[13px] leading-relaxed shadow-sm">
+                                <div className="max-w-[500px] bg-gradient-to-br from-purple-500 to-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-3 text-[13px] leading-relaxed shadow-sm">
                                     {m.text}
                                 </div>
                             </div>
@@ -674,7 +674,7 @@ export default function SidebarChat({
                     if (m.role === "assistant") {
                         return (
                             <div key={m.id} className="flex">
-                                <div className="max-w-[320px] bg-white/90 backdrop-blur-sm border border-purple-200/50 rounded-2xl rounded-bl-md p-4 shadow-sm">
+                                <div className="max-w-[500px] bg-white/90 backdrop-blur-sm border border-purple-200/50 rounded-2xl rounded-bl-md p-4 shadow-sm">
                                     {renderAssistant(m)}
                                 </div>
                             </div>

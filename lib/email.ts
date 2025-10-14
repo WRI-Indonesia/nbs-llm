@@ -316,12 +316,15 @@ class EmailService {
             .button {
               display: inline-block;
               background: linear-gradient(135deg, #8b5cf6, #3b82f6);
-              color: white;
+              color: white !important;
               padding: 12px 24px;
               text-decoration: none;
               border-radius: 6px;
               font-weight: 500;
               margin: 20px 0;
+            }
+            .button:hover {
+              color: white !important;
             }
             .footer {
               margin-top: 40px;

@@ -85,25 +85,28 @@ export default function InvitationPage() {
 
   const fetchInvitationDetails = async () => {
     try {
-      // This would typically be a GET request to fetch invitation details
-      // For now, we'll simulate the data structure
-      setInvitation({
-        id: 'inv-123',
-        email: 'user@example.com',
-        role: 'MEMBER',
-        status: 'PENDING',
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        organization: {
-          id: 'org-123',
-          name: 'Example Organization',
-          slug: 'example-org'
-        },
-        inviter: {
-          name: 'John Doe',
-          email: 'john@example.com'
+      const response = await fetch(`/api/organizations/invitations/${token}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
         }
       })
+
+      if (response.ok) {
+        const invitationData = await response.json()
+        setInvitation(invitationData)
+      } else {
+        const errorData = await response.json()
+        
+        // If invitation is invalid (404), redirect to error page
+        if (response.status === 404) {
+          router.push('/organizations/invite/invalid')
+          return
+        }
+        
+        setError(errorData.error || 'Failed to load invitation details')
+      }
     } catch (error) {
       console.error('Error fetching invitation:', error)
       setError('Failed to load invitation details')
@@ -132,14 +135,33 @@ export default function InvitationPage() {
       if (response.ok) {
         const result = await response.json()
         toast.success(result.message || 'Successfully joined the organization!')
+        // Redirect to organization management page
         router.push('/organizations/manage')
       } else {
         const error = await response.json()
-        toast.error(error.error || 'Failed to accept invitation')
+        
+        // Handle specific error cases
+        if (response.status === 404) {
+          // Invalid token - redirect to error page
+          router.push('/organizations/invite/invalid')
+        } else if (response.status === 400) {
+          // Expired or already processed
+          toast.error(error.error || 'This invitation is no longer valid')
+          // Redirect to error page after showing toast
+          setTimeout(() => {
+            router.push('/organizations/invite/invalid')
+          }, 2000)
+        } else if (response.status === 403) {
+          // Email mismatch
+          toast.error(error.error || 'This invitation is not for your email address')
+        } else {
+          // Other errors
+          toast.error(error.error || 'Failed to accept invitation')
+        }
       }
     } catch (error) {
       console.error('Error accepting invitation:', error)
-      toast.error('Failed to accept invitation')
+      toast.error('Failed to accept invitation. Please try again.')
     } finally {
       setProcessing(false)
     }

@@ -285,35 +285,44 @@ pm2 start npm --name "flow-schema" -- start
 
 ### Environment Variables
 
+**Required Environment Variables:**
+
 ```env
-# Required for database mode
-DATABASE_URL="postgresql://user:pass@host:5432/db"
+# NextAuth Configuration
+NEXTAUTH_SECRET=your-nextauth-secret-key-here
+NEXTAUTH_URL=http://localhost:3000
 
-# Required for AI assistant
-OPENAI_API_KEY="sk-your-openai-api-key"
-EMBED_MODEL_NAME="text-embedding-3-large"
-CHAT_MODEL="gpt-4o-mini"
+# Google OAuth (optional - for Google sign-in)
+# Get these from https://console.developers.google.com/
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
 
-# Required for authentication
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-secret-key-here"
+# Database
+DATABASE_URL=postgresql://username:password@localhost:5432/database_name
 
-# Required for Google OAuth
-GOOGLE_CLIENT_ID="your-google-client-id"
-GOOGLE_CLIENT_SECRET="your-google-client-secret"
+# OpenAI
+OPENAI_API_KEY=sk-your-openai-api-key-here
+EMBED_MODEL_NAME=text-embedding-3-large
+CHAT_MODEL=gpt-4o-mini
 
-# Required for email verification
-SMTP_HOST="smtp.gmail.com"
-SMTP_PORT="587"
-SMTP_SECURE="false"
-SMTP_USER="your-email@gmail.com"
-SMTP_PASS="your-app-password"
-SMTP_FROM="your-email@gmail.com"
+# Gmail
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=your-email@gmail.com
 
-# Optional
-NEXT_PUBLIC_APP_URL="https://your-domain.com"
-NODE_ENV="production"
+# Minio
+MINIO_ENDPOINT=localhost
+MINIO_REGION=us-east-1
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=data-lab-files
+MINIO_PUBLIC_BROWSER=true
 ```
+
+📖 **Complete configuration guide:** See `.env.example` for detailed explanations and all available options.
 
 ## 🤝 Contributing
 

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flow Schema Designer",
-  description: "Visual database schema designer with flow-based interface. Create, edit, and visualize your database schemas with drag-and-drop simplicity.",
+  title: "Data Lab Indonesia LLM",
+  description: "Collaborative data platform with visual schema designer, AI-powered data chat, team collaboration, and knowledge sharing. Transform your Excel data into intelligent systems.",
 };
 
 export default function RootLayout({

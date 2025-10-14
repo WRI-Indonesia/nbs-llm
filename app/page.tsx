@@ -1,11 +1,17 @@
 import Link from "next/link"
-import { ArrowRight, Database, Workflow, Sparkles, MousePointerClick, Pencil, GitBranch, MessageSquare, Save, Eye, Zap, BookOpen, Code2, FileText } from "lucide-react"
+import { ArrowRight, Database, Workflow, Sparkles, MousePointerClick, Pencil, GitBranch, MessageSquare, Save, Eye, Zap, BookOpen, Code2, FileText, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Toaster } from "@/components/ui/sonner"
 import Header from "@/components/Header"
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Data Lab Indonesia LLM - Collaborative Data Platform",
+  description: "Transform your Excel data into powerful relational databases with AI-powered conversations, team collaboration, and knowledge sharing. Create intelligent data systems with your team.",
+}
 
 export default async function HomePage() {
   const session = await getServerSession(authOptions)
@@ -19,15 +25,15 @@ export default async function HomePage() {
         <div className="max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-semibold mb-6">
             <Zap className="h-4 w-4" />
-            <span>Data Lab Indonesia LLM - Talk with your data</span>
+            <span>Data Lab Indonesia LLM - Talk with Your Data</span>
           </div>
           <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-slate-900 to-slate-600 bg-clip-text text-transparent">
-            Data Lab Indonesia LLM Experimental
+            Data Lab Indonesia LLM
           </h2>
           <p className="text-xl text-slate-600 mb-8">
             Transform your Excel data into powerful relational databases with an intuitive visual interface. 
-            Create relationships between your data tables, then talk with your data using AI to get insights, 
-            solutions, and learn SQL and prompts. Turn your spreadsheets into intelligent data systems! 📊🤖✨
+            Collaborate with your team through organizations, share knowledge via blogs, and talk with your data using AI 
+            to get insights, solutions, and learn SQL and prompts. Turn your spreadsheets into intelligent collaborative data systems! 📊🤖✨👥
           </p>
           <div className="flex gap-4 justify-center">
             <Link href="/playground">
@@ -56,15 +62,15 @@ export default async function HomePage() {
       {/* Features */}
       <section className="container mx-auto px-4 py-16">
         <h3 className="text-3xl font-bold text-center mb-12">Why Choose Data Lab Indonesia LLM?</h3>
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
           <Card className="border-2 hover:border-blue-300 transition-colors">
             <CardHeader>
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
                 <Workflow className="h-7 w-7 text-blue-600" />
               </div>
-              <CardTitle>Excel to Database Converter</CardTitle>
+              <CardTitle>Visual Schema Designer</CardTitle>
               <CardDescription>
-                Transform your Excel spreadsheets into structured relational databases with an intuitive visual interface. 
+                Transform your Excel spreadsheets into structured relational databases with an intuitive drag-and-drop interface. 
                 Import, organize, and connect your data tables seamlessly! 📊
               </CardDescription>
             </CardHeader>
@@ -88,10 +94,23 @@ export default async function HomePage() {
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
                 <Sparkles className="h-7 w-7 text-purple-600" />
               </div>
-              <CardTitle>SQL & Prompt Learning</CardTitle>
+              <CardTitle>Team Collaboration</CardTitle>
               <CardDescription>
-                Learn SQL queries and AI prompting techniques through interactive examples. 
-                Master data analysis skills while working with your own data! 📚🎓
+                Work together with your team through organizations. Share schemas, manage permissions, 
+                and collaborate on data projects with role-based access control! 👥🔐
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="border-2 hover:border-orange-300 transition-colors">
+            <CardHeader>
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
+                <FileText className="h-7 w-7 text-orange-600" />
+              </div>
+              <CardTitle>Knowledge Sharing</CardTitle>
+              <CardDescription>
+                Share insights and documentation through our blog system. Create public, internal, or private posts, 
+                import Jupyter notebooks, and build a knowledge base for your team! 📝📚
               </CardDescription>
             </CardHeader>
           </Card>
@@ -351,6 +370,76 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Authentication & Collaboration Features */}
+      <section className="container mx-auto px-4 py-16 bg-gradient-to-b from-purple-50/50 to-transparent -mx-4">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <h3 className="text-3xl font-bold mb-4">Built for Teams & Organizations</h3>
+            <p className="text-lg text-slate-600">Secure, collaborative, and scalable data platform 🏢</p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-8">
+            <Card className="border-l-4 border-l-blue-500 shadow-lg">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Users className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <h4 className="text-xl font-bold">Organization Management</h4>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>Create and manage organizations with role-based access</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>Invite team members via email with custom roles</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>OWNER, ADMIN, MEMBER, and VIEWER permission levels</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>Secure authentication with email verification</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-green-500 shadow-lg">
+              <CardHeader>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-green-600" />
+                  </div>
+                  <h4 className="text-xl font-bold">Knowledge Sharing</h4>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>Create and share blog posts with your team</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>PUBLIC, INTERNAL, and PRIVATE visibility controls</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>Import and share Jupyter notebooks</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>Comment system for collaborative discussions</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
       {/* Quick Info */}
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-5xl mx-auto">
@@ -430,7 +519,7 @@ export default async function HomePage() {
       {/* Footer */}
       <footer className="border-t bg-slate-50 py-8">
         <div className="container mx-auto px-4 text-center text-slate-600">
-          <p>© 2025 Data Lab Indonesia LLM. Built with Next.js, Prisma, and ReactFlow.</p>
+          <p>© 2025 Data Lab Indonesia LLM. Built with Next.js, Prisma, ReactFlow, and NextAuth.</p>
         </div>
       </footer>
       <Toaster 

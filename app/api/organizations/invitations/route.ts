@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       where: { id: token.sub }
     })
 
-    if (user?.email !== invitation.email) {
+    if (user?.email?.toLowerCase() !== invitation.email?.toLowerCase()) {
       return NextResponse.json(
         { error: 'This invitation is not for your email address' },
         { status: 403 }
@@ -179,7 +179,7 @@ export async function DELETE(request: NextRequest) {
       where: { id: token.sub }
     })
 
-    if (user?.email !== invitation.email) {
+    if (user?.email?.toLowerCase() !== invitation.email?.toLowerCase()) {
       return NextResponse.json(
         { error: 'This invitation is not for your email address' },
         { status: 403 }

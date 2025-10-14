@@ -107,7 +107,8 @@ export async function GET(request: NextRequest) {
         createdAt: i.createdAt,
         expiresAt: i.expiresAt,
         inviter: i.inviter
-      }))
+      })),
+      currentUserRole: membership.role
     })
   } catch (error) {
     console.error('Error fetching organization members:', error)
@@ -303,7 +304,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Check if user has permission to manage members
+    // Check if user has permission to manage members (OWNER or ADMIN)
     const requesterMembership = await prisma.organizationMembership.findUnique({
       where: {
         userId_organizationId: {
@@ -313,14 +314,14 @@ export async function PUT(request: NextRequest) {
       }
     })
 
-    if (!requesterMembership || requesterMembership.role !== OrganizationRole.OWNER) {
+    if (!requesterMembership || (requesterMembership.role !== OrganizationRole.OWNER && requesterMembership.role !== OrganizationRole.ADMIN)) {
       return NextResponse.json(
-        { error: 'Only organization owners can manage members' },
+        { error: 'Only organization owners and admins can manage members' },
         { status: 403 }
       )
     }
 
-    // Prevent owner from changing their own role
+    // Prevent users from changing their own role
     if (targetUserId === userId) {
       return NextResponse.json(
         { error: 'Cannot modify your own role' },

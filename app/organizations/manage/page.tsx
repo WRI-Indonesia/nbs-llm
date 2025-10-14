@@ -56,6 +56,7 @@ interface OrganizationInvitation {
 interface OrganizationData {
   members: OrganizationMember[]
   invitations: OrganizationInvitation[]
+  currentUserRole: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER'
 }
 
 const roleLabels = {
@@ -570,7 +571,8 @@ export default function OrganizationManagementPage() {
                   <Users className="h-5 w-5" />
                   Members ({organizationData?.members.length || 0})
                 </CardTitle>
-                {organizationId && (
+                {organizationId && 
+                 (organizationData?.currentUserRole === 'OWNER' || organizationData?.currentUserRole === 'ADMIN') && (
                   <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
                     <DialogTrigger asChild>
                       <Button>
@@ -623,7 +625,10 @@ export default function OrganizationManagementPage() {
                           {getRoleIcon(member.role)}
                           {roleLabels[member.role]}
                         </Badge>
-                        {member.role !== 'OWNER' && (
+                        {/* Only show role change controls for admins/owners, and not for the current user */}
+                        {member.role !== 'OWNER' && 
+                         (organizationData?.currentUserRole === 'OWNER' || organizationData?.currentUserRole === 'ADMIN') &&
+                         member.userId !== session?.user?.id && (
                           <Select
                             value={member.role}
                             onValueChange={(value) => handleUpdateMemberRole(member.userId, value)}
@@ -638,7 +643,10 @@ export default function OrganizationManagementPage() {
                             </SelectContent>
                           </Select>
                         )}
-                        {member.role !== 'OWNER' && (
+                        {/* Only show remove button for admins/owners, and not for the current user */}
+                        {member.role !== 'OWNER' && 
+                         (organizationData?.currentUserRole === 'OWNER' || organizationData?.currentUserRole === 'ADMIN') &&
+                         member.userId !== session?.user?.id && (
                           <Button
                             variant="outline"
                             size="sm"

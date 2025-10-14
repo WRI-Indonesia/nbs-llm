@@ -85,8 +85,15 @@ jobs:
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.VM_SSH_KEY }}
         script: |
+          set -e  # Exit on any error
           echo "Updating container on llm.wri-indonesia.or.id..."
           cd /home/${{ secrets.VM_USER }}/docker/nbs-llm
+
+          echo "🔐 Authenticating with GitHub Container Registry..."
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
+            echo "❌ Failed to authenticate with GitHub Container Registry"
+            exit 1
+          }
 
           echo "🧩 Writing .env.production..."
           cat > .env.production <<EOF
@@ -114,6 +121,19 @@ jobs:
           MINIO_USE_SSL=${{ secrets.MINIO_USE_SSL }}
           EOF
 
-          docker compose pull nbs-llm
-          docker compose up -d nbs-llm
+          echo "📥 Pulling latest image..."
+          docker compose pull nbs-llm || {
+            echo "❌ Failed to pull Docker image"
+            exit 1
+          }
+
+          echo "🚀 Starting container..."
+          docker compose up -d nbs-llm || {
+            echo "❌ Failed to start container"
+            exit 1
+          }
+
+          echo "🧹 Cleaning up unused images..."
           docker image prune -f
+
+          echo "✅ Deployment completed successfully!"

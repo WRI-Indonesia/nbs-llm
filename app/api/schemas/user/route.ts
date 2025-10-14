@@ -1,39 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 import prisma from '@/lib/prisma'
 
 // GET /api/schemas/user - List all schemas for the authenticated user
 export async function GET(request: NextRequest) {
   try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
-                        request.cookies.get('__Secure-next-auth.session-token')?.value
-
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    })
+    
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Find user from session token
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      include: { user: true }
+    // Get the user ID from the token (could be token.sub or token.id)
+    const userId = (token as any).id || token.sub
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Invalid user token' }, { status: 401 })
+    }
+
+    // Get user's organizations
+    const userOrganizations = await prisma.organizationMembership.findMany({
+      where: { userId: userId },
+      select: { organizationId: true }
     })
 
-    if (!session || session.expires < new Date()) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
-    }
+    const ownedOrganizations = await prisma.organization.findMany({
+      where: { ownerId: userId },
+      select: { id: true }
+    })
 
-    // Get all schemas for this user
+    const organizationIds = [
+      ...userOrganizations.map(m => m.organizationId),
+      ...ownedOrganizations.map(o => o.id)
+    ]
+
+    // Get all schemas for this user and their organizations
     const schemas = await prisma.schema.findMany({
-      where: { userId: session.userId },
+      where: {
+        OR: [
+          { userId: userId }, // User's own schemas
+          { 
+            organizationId: { in: organizationIds },
+            visibility: 'INTERNAL'
+          } // Organization schemas (only INTERNAL ones)
+        ]
+      },
       orderBy: { updatedAt: 'desc' },
       include: {
         _count: {
           select: { versions: true }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            ownerId: true
+          }
         }
       }
     })
 
-    return NextResponse.json({ schemas })
+    // Add user role information for each schema
+    const schemasWithRoles = await Promise.all(
+      schemas.map(async (schema) => {
+        let userRole = null
+        
+        if (schema.organizationId) {
+          // Check if user is organization owner
+          if (schema.organization?.ownerId === userId) {
+            userRole = 'OWNER'
+          } else {
+            // Check user's role in the organization
+            const membership = await prisma.organizationMembership.findFirst({
+              where: {
+                userId: userId,
+                organizationId: schema.organizationId
+              },
+              select: { role: true }
+            })
+            userRole = membership?.role || null
+          }
+        }
+
+        return {
+          ...schema,
+          userRole
+        }
+      })
+    )
+
+    return NextResponse.json({ schemas: schemasWithRoles })
   } catch (error: unknown) {
     console.error('Error fetching user schemas:', error)
     return NextResponse.json(
@@ -46,26 +113,24 @@ export async function GET(request: NextRequest) {
 // POST /api/schemas/user - Create a new schema for the authenticated user
 export async function POST(request: NextRequest) {
   try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
-                        request.cookies.get('__Secure-next-auth.session-token')?.value
-
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    })
+    
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Find user from session token
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      include: { user: true }
-    })
-
-    if (!session || session.expires < new Date()) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+    // Get the user ID from the token (could be token.sub or token.id)
+    const userId = (token as any).id || token.sub
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Invalid user token' }, { status: 401 })
     }
 
     const body = await request.json()
-    const { name, description, graphJson } = body
+    const { name, description, graphJson, visibility = 'PRIVATE', organizationId } = body
 
     if (!name) {
       return NextResponse.json(
@@ -74,10 +139,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate organizationId for INTERNAL visibility
+    if (visibility === 'INTERNAL' && !organizationId) {
+      return NextResponse.json(
+        { error: 'Organization ID is required for internal schemas' },
+        { status: 400 }
+      )
+    }
+
+    // If organizationId is provided, verify user has access to it
+    if (organizationId) {
+      const membership = await prisma.organizationMembership.findFirst({
+        where: {
+          userId: userId,
+          organizationId: organizationId
+        }
+      })
+
+      const isOwner = await prisma.organization.findFirst({
+        where: {
+          id: organizationId,
+          ownerId: userId
+        }
+      })
+
+      if (!membership && !isOwner) {
+        return NextResponse.json(
+          { error: 'You do not have access to this organization' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Check if schema with this name already exists for this user
     const existingSchema = await prisma.schema.findFirst({
       where: {
-        userId: session.userId,
+        userId: userId,
         name: name
       }
     })
@@ -92,10 +189,12 @@ export async function POST(request: NextRequest) {
     // Create new schema
     const schema = await prisma.schema.create({
       data: {
-        userId: session.userId,
+        userId: userId,
         name,
         description: description || '',
         graphJson: graphJson || { nodes: [], edges: [] },
+        visibility: visibility as any,
+        organizationId: organizationId || null,
         version: 1,
         versions: {
           create: {
@@ -127,22 +226,20 @@ export async function POST(request: NextRequest) {
 // DELETE /api/schemas/user/[id] - Delete a schema
 export async function DELETE(request: NextRequest) {
   try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('next-auth.session-token')?.value || 
-                        request.cookies.get('__Secure-next-auth.session-token')?.value
-
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    const token = await getToken({ 
+      req: request, 
+      secret: process.env.NEXTAUTH_SECRET 
+    })
+    
+    if (!token?.sub) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Find user from session token
-    const session = await prisma.session.findUnique({
-      where: { sessionToken },
-      include: { user: true }
-    })
-
-    if (!session || session.expires < new Date()) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+    // Get the user ID from the token (could be token.sub or token.id)
+    const userId = (token as any).id || token.sub
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Invalid user token' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
@@ -152,16 +249,63 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Schema ID is required' }, { status: 400 })
     }
 
-    // Verify the schema belongs to this user
+    // Get the schema with organization info
     const schema = await prisma.schema.findFirst({
       where: {
         id: schemaId,
-        userId: session.userId
+        OR: [
+          { userId: userId }, // User's own schemas
+          { 
+            organizationId: { not: null },
+            visibility: 'INTERNAL'
+          } // Organization schemas
+        ]
+      },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            ownerId: true
+          }
+        }
       }
     })
 
     if (!schema) {
       return NextResponse.json({ error: 'Schema not found' }, { status: 404 })
+    }
+
+    // Check authorization for deletion
+    let canDelete = false
+
+    // User can delete their own schemas
+    if (schema.userId === userId) {
+      canDelete = true
+    }
+
+    // For organization schemas, check if user is admin/owner
+    if (schema.organizationId && !canDelete) {
+      // Check if user is organization owner
+      if (schema.organization?.ownerId === userId) {
+        canDelete = true
+      } else {
+        // Check if user has admin role in the organization
+        const membership = await prisma.organizationMembership.findFirst({
+          where: {
+            userId: userId,
+            organizationId: schema.organizationId,
+            role: { in: ['OWNER', 'ADMIN'] }
+          }
+        })
+        canDelete = !!membership
+      }
+    }
+
+    if (!canDelete) {
+      return NextResponse.json(
+        { error: 'You do not have permission to delete this schema' },
+        { status: 403 }
+      )
     }
 
     // Delete the schema (cascade will delete versions)

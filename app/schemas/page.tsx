@@ -117,11 +117,33 @@ interface Schema {
   version: number
   currentVersion: number
   isActive: boolean
+  visibility: 'PUBLIC' | 'INTERNAL' | 'PRIVATE'
   createdAt: string
   updatedAt: string
   _count: {
     versions: number
   }
+  user: {
+    id: string
+    name: string | null
+    email: string
+  }
+  organization: {
+    id: string
+    name: string
+    slug: string
+    ownerId: string
+  } | null
+  userRole: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER' | null
+}
+
+interface Organization {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  createdAt: string
+  role: string
 }
 
 export default function SchemaSelectionPage() {
@@ -134,9 +156,13 @@ export default function SchemaSelectionPage() {
   const [schemaVisibility, setSchemaVisibility] = useState<'PUBLIC' | 'INTERNAL' | 'PRIVATE'>('PRIVATE')
   const [creating, setCreating] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [userOrganizations, setUserOrganizations] = useState<Organization[]>([])
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string>('')
+  const [loadingOrganizations, setLoadingOrganizations] = useState(false)
 
   useEffect(() => {
     fetchSchemas()
+    fetchUserOrganizations()
   }, [])
 
   const validateSchemaName = (name: string) => {
@@ -155,6 +181,39 @@ export default function SchemaSelectionPage() {
     } else {
       setNameError(null)
     }
+  }
+
+  const fetchUserOrganizations = async () => {
+    try {
+      setLoadingOrganizations(true)
+      const response = await fetch('/api/user/organization', {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setUserOrganizations(data.organizations || [])
+      } else {
+        console.error('Failed to fetch organizations')
+      }
+    } catch (error) {
+      console.error('Error fetching user organizations:', error)
+    } finally {
+      setLoadingOrganizations(false)
+    }
+  }
+
+  const canDeleteSchema = (schema: Schema) => {
+    // User can delete their own schemas
+    if (!schema.organization) {
+      return true
+    }
+    
+    // For organization schemas, only OWNER and ADMIN can delete
+    return schema.userRole === 'OWNER' || schema.userRole === 'ADMIN'
   }
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -191,19 +250,32 @@ export default function SchemaSelectionPage() {
       return
     }
 
+    // Validate organization selection for INTERNAL visibility
+    if (schemaVisibility === 'INTERNAL' && !selectedOrganizationId) {
+      toast.error('Please select an organization for internal schemas')
+      return
+    }
+
     setCreating(true)
     try {
       const graphJson = schemaTemplate === 'sample' ? SAMPLE_SCHEMA_DATA : { nodes: [], edges: [] }
       
+      const requestBody: any = {
+        name: newSchemaName.trim(),
+        description: newSchemaDescription.trim() || null,
+        graphJson: graphJson,
+        visibility: schemaVisibility
+      }
+
+      // Include organizationId for INTERNAL schemas
+      if (schemaVisibility === 'INTERNAL' && selectedOrganizationId) {
+        requestBody.organizationId = selectedOrganizationId
+      }
+      
       const response = await fetch('/api/schemas/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newSchemaName.trim(),
-          description: newSchemaDescription.trim() || null,
-          graphJson: graphJson,
-          visibility: schemaVisibility
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (response.ok) {
@@ -216,7 +288,14 @@ export default function SchemaSelectionPage() {
         setShowCreateDialog(false)
         toast.success(`Schema created successfully${schemaTemplate === 'sample' ? ' with sample data' : ''}`)
       } else {
-        const error = await response.json()
+        let error
+        try {
+          error = await response.json()
+        } catch (parseError) {
+          console.error('Failed to parse error response:', parseError)
+          error = { error: `HTTP ${response.status}: ${response.statusText}` }
+        }
+        console.error('Schema creation error:', error)
         if (error.error && error.error.includes('already exists')) {
           setNameError(error.error)
           toast.error(`Schema name already exists: "${newSchemaName.trim()}"`)
@@ -263,6 +342,7 @@ export default function SchemaSelectionPage() {
       setNewSchemaDescription('')
       setSchemaTemplate('blank')
       setSchemaVisibility('PRIVATE')
+      setSelectedOrganizationId('')
       setNameError(null)
     }
   }
@@ -312,7 +392,7 @@ export default function SchemaSelectionPage() {
 
         {/* Create Schema Dialog - Always available */}
         <Dialog open={showCreateDialog} onOpenChange={handleDialogClose}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Plus className="h-5 w-5 text-purple-600" />
@@ -387,6 +467,40 @@ export default function SchemaSelectionPage() {
                 </p>
               </div>
 
+              {/* Organization Selection - Only show for INTERNAL visibility */}
+              <div className={schemaVisibility === 'INTERNAL' ? 'block' : 'hidden'}>
+                <label className="text-sm font-medium block mb-1.5">Organization</label>
+                <Select 
+                  value={selectedOrganizationId} 
+                  onValueChange={(value) => setSelectedOrganizationId(value)}
+                  disabled={loadingOrganizations}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={loadingOrganizations ? "Loading organizations..." : "Select an organization"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userOrganizations.length === 0 ? (
+                      <div className="p-2 text-sm text-gray-500 text-center">
+                        No organizations available. Create an organization first.
+                      </div>
+                    ) : (
+                      userOrganizations.map((org) => (
+                        <SelectItem key={org.id} value={org.id}>
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            <span>{org.name}</span>
+                            <span className="text-xs text-gray-500">({org.role})</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Select which organization can access this schema
+                </p>
+              </div>
+
               <div>
                 <label className="text-sm font-medium block mb-1.5">Template</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -443,6 +557,26 @@ export default function SchemaSelectionPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Schema Grouping */}
+        {schemas.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-4 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Your Schemas</h2>
+              <div className="flex gap-2">
+                <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                  {schemas.filter(s => !s.organization).length} Personal
+                </span>
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+                  {schemas.filter(s => s.organization).length} Organization
+                </span>
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                  {schemas.filter(s => s.visibility === 'PUBLIC').length} Public
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Schemas Grid */}
         {schemas.length === 0 ? (
           <div className="text-center py-16">
@@ -469,9 +603,24 @@ export default function SchemaSelectionPage() {
                 <div className="p-6 flex-1 flex flex-col">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                        {schema.name}
-                      </h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {schema.name}
+                        </h3>
+                        {/* Visibility Badge */}
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          schema.visibility === 'PUBLIC' 
+                            ? 'bg-green-100 text-green-800' 
+                            : schema.visibility === 'INTERNAL'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {schema.visibility === 'PUBLIC' && <Globe className="w-3 h-3 inline mr-1" />}
+                          {schema.visibility === 'INTERNAL' && <Users className="w-3 h-3 inline mr-1" />}
+                          {schema.visibility === 'PRIVATE' && <Lock className="w-3 h-3 inline mr-1" />}
+                          {schema.visibility}
+                        </span>
+                      </div>
                       <div className="min-h-[20px] mb-2">
                         {schema.description ? (
                           <p className="text-sm text-gray-600">
@@ -483,16 +632,48 @@ export default function SchemaSelectionPage() {
                           </p>
                         )}
                       </div>
+                      {/* Owner/Organization Info */}
+                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                        {schema.organization ? (
+                          <>
+                            <Users className="w-3 h-3" />
+                            <span>{schema.organization.name}</span>
+                            {schema.userRole && (
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                schema.userRole === 'OWNER' 
+                                  ? 'bg-purple-100 text-purple-700' 
+                                  : schema.userRole === 'ADMIN'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : schema.userRole === 'MEMBER'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {schema.userRole}
+                              </span>
+                            )}
+                            <span>•</span>
+                            <span>by {schema.user.name || schema.user.email}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Personal schema</span>
+                            <span>•</span>
+                            <span>by {schema.user.name || schema.user.email}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteSchema(schema.id, schema.name)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {canDeleteSchema(schema) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteSchema(schema.id, schema.name)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 

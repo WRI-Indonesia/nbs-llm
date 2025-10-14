@@ -652,13 +652,13 @@ export default function SchemaSelectionPage() {
                               </span>
                             )}
                             <span>•</span>
-                            <span>by {schema.user.name || schema.user.email}</span>
+                            <span>by {schema.user?.name || schema.user?.email || 'Unknown'}</span>
                           </>
                         ) : (
                           <>
                             <span>Personal schema</span>
                             <span>•</span>
-                            <span>by {schema.user.name || schema.user.email}</span>
+                            <span>by {schema.user?.name || schema.user?.email || 'Unknown'}</span>
                           </>
                         )}
                       </div>

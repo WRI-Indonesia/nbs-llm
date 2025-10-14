@@ -209,11 +209,51 @@ export async function POST(request: NextRequest) {
         versions: true,
         _count: {
           select: { versions: true }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            ownerId: true
+          }
         }
       }
     })
 
-    return NextResponse.json({ schema }, { status: 201 })
+    // Add user role information for the new schema
+    let userRole = null
+    
+    if (schema.organizationId) {
+      // Check if user is organization owner
+      if (schema.organization?.ownerId === userId) {
+        userRole = 'OWNER'
+      } else {
+        // Check user's role in the organization
+        const membership = await prisma.organizationMembership.findFirst({
+          where: {
+            userId: userId,
+            organizationId: schema.organizationId
+          },
+          select: { role: true }
+        })
+        userRole = membership?.role || null
+      }
+    }
+
+    const schemaWithRole = {
+      ...schema,
+      userRole
+    }
+
+    return NextResponse.json({ schema: schemaWithRole }, { status: 201 })
   } catch (error: unknown) {
     console.error('Error creating schema:', error)
     return NextResponse.json(

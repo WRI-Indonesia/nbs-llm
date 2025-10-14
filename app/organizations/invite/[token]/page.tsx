@@ -99,17 +99,25 @@ export default function InvitationPage() {
       } else {
         const errorData = await response.json()
         
-        // If invitation is invalid (404), redirect to error page
+        // If invitation is invalid (404), redirect to error page immediately
         if (response.status === 404) {
           router.push('/organizations/invite/invalid')
           return
         }
         
+        // For other errors, show error message and redirect after delay
         setError(errorData.error || 'Failed to load invitation details')
+        setTimeout(() => {
+          router.push('/organizations/invite/invalid')
+        }, 3000)
       }
     } catch (error) {
       console.error('Error fetching invitation:', error)
       setError('Failed to load invitation details')
+      // Redirect to error page on network errors
+      setTimeout(() => {
+        router.push('/organizations/invite/invalid')
+      }, 3000)
     } finally {
       setLoading(false)
     }
@@ -142,7 +150,8 @@ export default function InvitationPage() {
         
         // Handle specific error cases
         if (response.status === 404) {
-          // Invalid token - redirect to error page
+          // Invalid token - redirect to error page immediately
+          toast.error('Invalid invitation token')
           router.push('/organizations/invite/invalid')
         } else if (response.status === 400) {
           // Expired or already processed
@@ -154,9 +163,21 @@ export default function InvitationPage() {
         } else if (response.status === 403) {
           // Email mismatch
           toast.error(error.error || 'This invitation is not for your email address')
+          // Redirect to error page for security
+          setTimeout(() => {
+            router.push('/organizations/invite/invalid')
+          }, 3000)
+        } else if (response.status === 401) {
+          // Not authenticated
+          toast.error('Please sign in to accept the invitation')
+          router.push('/login')
         } else {
           // Other errors
           toast.error(error.error || 'Failed to accept invitation')
+          // Redirect to error page for unknown errors
+          setTimeout(() => {
+            router.push('/organizations/invite/invalid')
+          }, 3000)
         }
       }
     } catch (error) {
@@ -183,7 +204,32 @@ export default function InvitationPage() {
         router.push('/')
       } else {
         const error = await response.json()
-        toast.error(error.error || 'Failed to decline invitation')
+        
+        // Handle specific error cases for decline
+        if (response.status === 404) {
+          // Invalid token - redirect to error page
+          toast.error('Invalid invitation token')
+          router.push('/organizations/invite/invalid')
+        } else if (response.status === 400) {
+          // Invalid request
+          toast.error(error.error || 'Invalid request')
+          router.push('/organizations/invite/invalid')
+        } else if (response.status === 403) {
+          // Email mismatch
+          toast.error(error.error || 'This invitation is not for your email address')
+          router.push('/organizations/invite/invalid')
+        } else if (response.status === 401) {
+          // Not authenticated
+          toast.error('Please sign in to decline the invitation')
+          router.push('/login')
+        } else {
+          // Other errors
+          toast.error(error.error || 'Failed to decline invitation')
+          // Redirect to error page for unknown errors
+          setTimeout(() => {
+            router.push('/organizations/invite/invalid')
+          }, 3000)
+        }
       }
     } catch (error) {
       console.error('Error declining invitation:', error)

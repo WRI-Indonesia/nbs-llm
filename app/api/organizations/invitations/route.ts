@@ -11,7 +11,10 @@ export async function POST(request: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET 
     })
     
-    if (!token?.sub) {
+    // Get the user ID from the token (could be token.sub or token.id)
+    const userId = token ? ((token as any).id || token.sub) : null
+    
+    if (!userId) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -66,8 +69,10 @@ export async function POST(request: NextRequest) {
 
     // Check if the user's email matches the invitation
     const user = await prisma.user.findUnique({
-      where: { id: token.sub }
+      where: { id: userId }
     })
+
+    console.log('User ID:', userId, 'User:', user, 'Invitation:', invitation)
 
     if (user?.email?.toLowerCase() !== invitation.email?.toLowerCase()) {
       return NextResponse.json(
@@ -80,7 +85,7 @@ export async function POST(request: NextRequest) {
     const existingMembership = await prisma.organizationMembership.findUnique({
       where: {
         userId_organizationId: {
-          userId: token.sub,
+          userId: userId,
           organizationId: invitation.organizationId
         }
       }
@@ -103,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Create membership
     await prisma.organizationMembership.create({
       data: {
-        userId: token.sub,
+        userId: userId,
         organizationId: invitation.organizationId,
         role: invitation.role
       }
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
     // Update user's organizationId if they don't have one
     if (!user?.organizationId) {
       await prisma.user.update({
-        where: { id: token.sub },
+        where: { id: userId },
         data: { organizationId: invitation.organizationId }
       })
     }
@@ -145,7 +150,10 @@ export async function DELETE(request: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET 
     })
     
-    if (!token?.sub) {
+    // Get the user ID from the token (could be token.sub or token.id)
+    const userId = token ? ((token as any).id || token.sub) : null
+    
+    if (!userId) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -176,7 +184,7 @@ export async function DELETE(request: NextRequest) {
 
     // Check if the user's email matches the invitation
     const user = await prisma.user.findUnique({
-      where: { id: token.sub }
+      where: { id: userId }
     })
 
     if (user?.email?.toLowerCase() !== invitation.email?.toLowerCase()) {

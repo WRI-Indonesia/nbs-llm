@@ -39,6 +39,53 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { sessionId, role, content, metadata } = body
+    
+    if (!sessionId || !role || !content) {
+      return NextResponse.json(
+        { error: 'sessionId, role, and content are required' },
+        { status: 400 }
+      )
+    }
+    
+    if (!['user', 'assistant'].includes(role)) {
+      return NextResponse.json(
+        { error: 'role must be either "user" or "assistant"' },
+        { status: 400 }
+      )
+    }
+    
+    const message = await prisma.chatMessage.create({
+      data: {
+        sessionId,
+        role,
+        content,
+        metadata: metadata ? JSON.stringify(metadata) : null
+      }
+    })
+    
+    return NextResponse.json({
+      message: {
+        id: message.id.toString(),
+        role: message.role,
+        content: message.content,
+        metadata: message.metadata,
+        createdAt: message.createdAt.getTime()
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Create chat message error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)

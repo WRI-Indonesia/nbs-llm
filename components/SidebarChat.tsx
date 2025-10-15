@@ -226,7 +226,8 @@ export default function SidebarChat({
                     chatModel: 'gpt-4o-mini',
                     useGraphJson: true,
                     schemaId: currentSchemaId,
-                    execute: true
+                    execute: true,
+                    sessionId: currentSessionId
                 })
             })
 

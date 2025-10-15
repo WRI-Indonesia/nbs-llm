@@ -118,6 +118,7 @@ interface AskBody {
   useGraphJson?: boolean   // default TRUE (affects final SQL + execution)
   schemaId?: string
   execute?: boolean        // default TRUE (executes final SQL)
+  sessionId?: string       // for chat history
 }
 
 /** ---------- Similarity Helpers ---------- */
@@ -159,10 +160,30 @@ async function fetchRagDocs() {
   }
 }
 
+/** ---------- Chat History ---------- */
+async function fetchChatHistory(sessionId: string, limit: number = 10) {
+  try {
+    const messages = await prisma.chatMessage.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    })
+    return messages.reverse().map((msg: any) => ({
+      role: msg.role,
+      content: msg.content,
+      metadata: msg.metadata ? JSON.parse(msg.metadata) : null
+    }))
+  } catch (e) {
+    console.error('Error fetching chat history:', e)
+    return []
+  }
+}
+
 /** ---------- Prompt Builders ---------- */
 function buildUserPrompt(
   question: string,
-  contextSnips: Array<{ text: string; payload: any; score: number }>
+  contextSnips: Array<{ text: string; payload: any; score: number }>,
+  chatHistory: Array<{ role: string; content: string; metadata?: any }> = []
 ): string {
   const ctx = contextSnips
     .map((s, i) => `#${i + 1} (${s.payload?.kind || '?'}) ${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}\n${s.text}`)
@@ -184,7 +205,13 @@ function buildUserPrompt(
       ? `Foreign-Key Join Hints:\n${joinHints.map(h => `- ${h}`).join('\n')}`
       : 'Foreign-Key Join Hints:\n(none)'
 
-  return `${hintsBlock}\n\nContext (top matches):\n${ctx}\n\nUser question:\n${question}\n\nProduce valid PostgreSQL SQL:`
+  // Build conversation context
+  let conversationContext = ''
+  if (chatHistory.length > 0) {
+    conversationContext = `\n\nPrevious conversation:\n${chatHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}\n`
+  }
+
+  return `${hintsBlock}\n\nContext (top matches):\n${ctx}${conversationContext}\n\nUser question:\n${question}\n\nProduce valid PostgreSQL SQL:`
 }
 
 /** Build column hints from RAG (prevents wrong names like body/content mixups) */
@@ -260,6 +287,7 @@ export async function POST(request: NextRequest) {
       useGraphJson = true,
       schemaId,
       execute = true,
+      sessionId,
     } = body
 
     if (!question || question.trim().length < 3) {
@@ -267,6 +295,12 @@ export async function POST(request: NextRequest) {
     }
     if (useGraphJson && !schemaId) {
       return NextResponse.json({ error: 'schemaId is required when useGraphJson is true' }, { status: 400 })
+    }
+
+    // (0) Load chat history if sessionId provided
+    let chatHistory: Array<{ role: string; content: string; metadata?: any }> = []
+    if (sessionId) {
+      chatHistory = await fetchChatHistory(sessionId, 10)
     }
 
     // (1) Load RAG docs
@@ -343,7 +377,7 @@ export async function POST(request: NextRequest) {
     /** (3) INITIAL SQL (PLAIN TABLE) */
     const messagesInitial = [
       { role: 'system', content: SQL_SYSTEM_PROMPT },
-      { role: 'user', content: buildUserPrompt(question, contextSnips) },
+      { role: 'user', content: buildUserPrompt(question, contextSnips, chatHistory) },
     ] as const
 
     const chatInitial = await openai.chat.completions.create({
@@ -503,7 +537,43 @@ ${usedBrief}
       derivation = parsed?.derivation
     } catch {}
 
-    /** (7) Response */
+    /** (7) Store chat messages if sessionId provided */
+    if (sessionId) {
+      try {
+        // Store user message
+        await prisma.chatMessage.create({
+          data: {
+            sessionId,
+            role: 'user',
+            content: question
+          }
+        })
+
+        // Store assistant response
+        await prisma.chatMessage.create({
+          data: {
+            sessionId,
+            role: 'assistant',
+            content: `Generated SQL query: ${sql_final}`,
+            metadata: JSON.stringify({
+              sql_initial,
+              sql_final,
+              executed,
+              error: execError,
+              rows: rows?.slice(0, 5), // Store first 5 rows only
+              summary,
+              suggestions,
+              derivation
+            })
+          }
+        })
+      } catch (error) {
+        console.error('Error storing chat messages:', error)
+        // Continue anyway, don't fail the request
+      }
+    }
+
+    /** (8) Response */
     return NextResponse.json({
       ok: true,
       sql_initial,   // plain-table RAG SQL

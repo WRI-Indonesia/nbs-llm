@@ -27,7 +27,11 @@ interface AIResponseData {
     used?: AIRagItem[];
     summary?: string;
     suggestions?: string[];
-    rationale?: string;
+    derivation?: {
+        from_prompt: string[];
+        from_data: string[];
+        join_logic: string[];
+    };
 }
 
 function Spinner({ size = 16 }: { size?: number }) {
@@ -147,7 +151,7 @@ export default function SidebarChat({
                         if (msg.role === 'assistant' && msg.metadata) {
                             try {
                                 const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
-                                if (metadata.sql_final || metadata.sql_initial || metadata.rows || metadata.summary || metadata.suggestions || metadata.rationale) {
+                                if (metadata.sql_final || metadata.sql_initial || metadata.rows || metadata.summary || metadata.suggestions || metadata.derivation) {
                                     (message as any).data = metadata
                                     message.text = '' // Clear text since we'll render with accordions
                                 }
@@ -280,7 +284,7 @@ export default function SidebarChat({
 
     const renderAssistant = (m: Extract<ChatMessage, { role: "assistant" }>) => {
         // For structured AI responses, render with accordions
-        if (m.data && (m.data.sql_final || m.data.sql_initial || m.data.rows || m.data.summary || m.data.suggestions || m.data.rationale)) {
+        if (m.data && (m.data.sql_final || m.data.sql_initial || m.data.rows || m.data.summary || m.data.suggestions || m.data.derivation)) {
             const data = m.data as AIResponseData
             return (
                 <div className="space-y-3">
@@ -300,10 +304,10 @@ export default function SidebarChat({
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
-                                    <div className="space-y-3">
+                                    <div className="space-y-4">
                                         {data.sql_initial && (
                                             <div>
-                                                <div className="text-sm font-medium text-slate-700 mb-2">Final SQL:</div>
+                                                <div className="text-sm font-medium text-slate-700 mb-2">Initial SQL (Plain Tables):</div>
                                                 <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
                                                     <pre>{data.sql_initial}</pre>
                                                 </div>
@@ -386,7 +390,7 @@ export default function SidebarChat({
                                             <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                                                 <div className="flex-1">
                                                     <div className="font-medium text-slate-900">
-                                                        {item.table}.{item.key}
+                                                        {item.key}
                                                     </div>
                                                     <div className="text-sm text-slate-600 mt-1">
                                                         {item.description}
@@ -401,6 +405,11 @@ export default function SidebarChat({
                                                         <span className="px-2 py-1 bg-slate-200 text-slate-700 text-xs rounded">
                                                             {item.kind}
                                                         </span>
+                                                        {item.table && (
+                                                            <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded">
+                                                                {item.table}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="ml-4 text-right">
@@ -436,22 +445,53 @@ export default function SidebarChat({
                             </AccordionItem>
                         )}
 
-                        {/* Rationale Section */}
-                        {data.rationale && (
-                            <AccordionItem value="rationale" className="border border-orange-200 rounded-lg">
+                        {/* Derivation Section */}
+                        {data.derivation && (
+                            <AccordionItem value="derivation" className="border border-orange-200 rounded-lg">
                                 <AccordionTrigger className="px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-t-lg hover:no-underline">
                                     <div className="flex items-center gap-2">
                                         <Lightbulb className="h-4 w-4 text-orange-600" />
-                                        <span className="font-medium text-orange-900">Rationale</span>
+                                        <span className="font-medium text-orange-900">Derivation</span>
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
-                                    <div className="prose prose-sm max-w-none text-slate-700">
-                                        {data.rationale.split('\n').map((line: string, idx: number) => (
-                                            <p key={idx} className="mb-2 last:mb-0">
-                                                {line}
-                                            </p>
-                                        ))}
+                                    <div className="space-y-4">
+                                        {data.derivation.from_prompt && data.derivation.from_prompt.length > 0 && (
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-700 mb-2">From Prompt:</div>
+                                                <div className="space-y-2">
+                                                    {data.derivation.from_prompt.map((item: string, idx: number) => (
+                                                        <div key={idx} className="p-2 bg-blue-50 rounded-lg text-sm text-slate-700">
+                                                            {item}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {data.derivation.from_data && data.derivation.from_data.length > 0 && (
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-700 mb-2">From Data:</div>
+                                                <div className="space-y-2">
+                                                    {data.derivation.from_data.map((item: string, idx: number) => (
+                                                        <div key={idx} className="p-2 bg-green-50 rounded-lg text-sm text-slate-700">
+                                                            {item}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {data.derivation.join_logic && data.derivation.join_logic.length > 0 && (
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-700 mb-2">Join Logic:</div>
+                                                <div className="space-y-2">
+                                                    {data.derivation.join_logic.map((item: string, idx: number) => (
+                                                        <div key={idx} className="p-2 bg-purple-50 rounded-lg text-sm text-slate-700">
+                                                            {item}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>

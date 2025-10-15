@@ -129,7 +129,12 @@ export default function SidebarChat({
                 }
 
                 // Check if schema is indexed for current schema
-                const indexResponse = await fetch(`/api/ai/index?schemaId=${currentSchemaId}`)
+                const schemaIdToCheck = currentSchemaId && currentSchemaId !== 'undefined' ? currentSchemaId : null
+                const indexCheckUrl = schemaIdToCheck 
+                    ? `/api/ai/index?schemaId=${schemaIdToCheck}`
+                    : `/api/ai/index?sessionId=${currentSessionId}`
+                
+                const indexResponse = await fetch(indexCheckUrl)
                 if (indexResponse.ok) {
                     const indexData = await indexResponse.json()
                     setIsIndexed(indexData.count > 0)
@@ -179,13 +184,29 @@ export default function SidebarChat({
     const checkAndUpdateIndex = React.useCallback(async () => {
         try {
             const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
-            if (!currentSessionId) return false
+            if (!currentSessionId) {
+                console.error('No session ID available for indexing')
+                return false
+            }
+
+            // If currentSchemaId is undefined, we'll rely on sessionId to find the schema
+            const schemaIdToUse = currentSchemaId && currentSchemaId !== 'undefined' ? currentSchemaId : null
+            
+            console.log('Checking index with:', { schemaId: schemaIdToUse, sessionId: currentSessionId })
 
             // Check current index status
-            const indexStatusResponse = await fetch(`/api/ai/index?schemaId=${currentSchemaId}`)
-            if (!indexStatusResponse.ok) return false
+            const indexStatusUrl = schemaIdToUse 
+                ? `/api/ai/index?schemaId=${schemaIdToUse}`
+                : `/api/ai/index?sessionId=${currentSessionId}`
+            
+            const indexStatusResponse = await fetch(indexStatusUrl)
+            if (!indexStatusResponse.ok) {
+                console.error('Failed to check index status:', await indexStatusResponse.text())
+                return false
+            }
             
             const { count } = await indexStatusResponse.json()
+            console.log('Current index count:', count)
             
             // If no index exists, we need to create one
             if (count === 0) {
@@ -196,7 +217,7 @@ export default function SidebarChat({
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        schemaId: currentSchemaId,
+                        schemaId: schemaIdToUse,
                         sessionId: currentSessionId 
                     })
                 })
@@ -212,7 +233,9 @@ export default function SidebarChat({
                     setIndexingProgress("")
                     return true
                 } else {
-                    throw new Error('Failed to create index')
+                    const errorData = await indexResponse.json()
+                    console.error('Failed to create index:', errorData)
+                    throw new Error(errorData.error || 'Failed to create index')
                 }
             }
             
@@ -226,7 +249,7 @@ export default function SidebarChat({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    schemaId: currentSchemaId,
+                    schemaId: schemaIdToUse,
                     sessionId: currentSessionId 
                 })
             })
@@ -242,7 +265,9 @@ export default function SidebarChat({
                 setIndexingProgress("")
                 return true
             } else {
-                throw new Error('Failed to update index')
+                const errorData = await indexResponse.json()
+                console.error('Failed to update index:', errorData)
+                throw new Error(errorData.error || 'Failed to update index')
             }
         } catch (error) {
             console.error('Index check/update failed:', error)

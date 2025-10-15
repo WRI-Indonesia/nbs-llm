@@ -90,6 +90,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { schemaId, sessionId } = body
     
+    console.log('Index API called with:', { schemaId, sessionId })
+    
     if (!schemaId && !sessionId) {
       return NextResponse.json(
         { error: 'Either schemaId or sessionId is required' },
@@ -100,12 +102,13 @@ export async function POST(request: NextRequest) {
     // Find the schema directly from database
     let schema: any = null
     
-    if (schemaId) {
+    if (schemaId && schemaId !== 'undefined') {
       // Get specific schema by ID
       try {
         schema = await prisma.schema.findUnique({
           where: { id: schemaId }
         })
+        console.log('Schema found by ID:', schema ? 'Yes' : 'No')
       } catch (error) {
         console.error('Error fetching schema by ID:', error)
       }
@@ -117,15 +120,18 @@ export async function POST(request: NextRequest) {
         const schemas = await prisma.schema.findMany({
           where: { sessionId: sessionId }
         })
+        console.log('Schemas found by sessionId:', schemas.length)
         schema = schemas.find((s: any) => s.name.startsWith('playground-'))
+        console.log('Playground schema found:', schema ? 'Yes' : 'No')
       } catch (error) {
         console.error('Error fetching schema by session ID:', error)
       }
     }
     
     if (!schema) {
+      console.log('No schema found. Available schemas:', await prisma.schema.findMany({ select: { id: true, name: true, sessionId: true } }))
       return NextResponse.json(
-        { error: 'Schema not found' },
+        { error: `Schema not found. schemaId: ${schemaId}, sessionId: ${sessionId}` },
         { status: 404 }
       )
     }
@@ -220,10 +226,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const schemaId = searchParams.get('schemaId')
+    const sessionId = searchParams.get('sessionId')
     
     let count = 0
     
-    if (schemaId) {
+    if (schemaId && schemaId !== 'undefined') {
       count = await prisma.ragDoc.count({
         where: {
           payload: {
@@ -232,13 +239,31 @@ export async function GET(request: NextRequest) {
           }
         }
       })
+    } else if (sessionId) {
+      // Find schema by sessionId first, then count RAG docs for that schema
+      const schemas = await prisma.schema.findMany({
+        where: { sessionId: sessionId }
+      })
+      const playgroundSchema = schemas.find((s: any) => s.name.startsWith('playground-'))
+      
+      if (playgroundSchema) {
+        count = await prisma.ragDoc.count({
+          where: {
+            payload: {
+              path: ['schemaId'],
+              equals: playgroundSchema.id
+            }
+          }
+        })
+      }
     } else {
       count = await prisma.ragDoc.count()
     }
     
     return NextResponse.json({
       count,
-      schemaId: schemaId || null
+      schemaId: schemaId || null,
+      sessionId: sessionId || null
     })
     
   } catch (error: any) {

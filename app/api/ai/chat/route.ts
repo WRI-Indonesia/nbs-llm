@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         sessionId,
         role,
         content,
-        metadata: metadata ? JSON.stringify(metadata) : null
+        metadata: metadata ? JSON.stringify(metadata) : undefined
       }
     })
     

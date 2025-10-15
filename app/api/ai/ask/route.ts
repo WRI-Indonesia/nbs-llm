@@ -487,9 +487,7 @@ ${sql_initial}
         if (!isSelectOnly(candidate)) {
           throw new Error('Generated SQL rejected by safety check (SELECT/CTE only).')
         }
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await prisma.$queryRawUnsafe(candidate)
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         rows = Array.isArray(result) ? result as unknown[] : []
         executed = true
       } catch (e: any) {

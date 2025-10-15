@@ -128,11 +128,13 @@ export default function SidebarChat({
                     localStorage.setItem('etl-ai-sessionId', currentSessionId)
                 }
 
-                // Check if schema is indexed
-                const indexResponse = await fetch('/api/ai/index')
+                // Check if schema is indexed for current schema
+                const indexResponse = await fetch(`/api/ai/index?schemaId=${currentSchemaId}`)
                 if (indexResponse.ok) {
                     const indexData = await indexResponse.json()
                     setIsIndexed(indexData.count > 0)
+                } else {
+                    setIsIndexed(false)
                 }
 
                 // Load chat history
@@ -173,24 +175,23 @@ export default function SidebarChat({
         initializeChat()
     }, [sessionId])
 
-    const send = async () => {
-        const q = input.trim()
-        if (!q || isSending) return
-
-        const userMsg: ChatMessage = { id: crypto.randomUUID(), role: "user", text: q, createdAt: Date.now() }
-        setMessages((m) => [...m, userMsg])
-        setInput("")
-        setIsSending(true)
-
+    // Check if index needs to be updated based on schema changes
+    const checkAndUpdateIndex = React.useCallback(async () => {
         try {
-            // Get current session ID
             const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
+            if (!currentSessionId) return false
+
+            // Check current index status
+            const indexStatusResponse = await fetch(`/api/ai/index?schemaId=${currentSchemaId}`)
+            if (!indexStatusResponse.ok) return false
             
-            if (!isIndexed) {
+            const { count } = await indexStatusResponse.json()
+            
+            // If no index exists, we need to create one
+            if (count === 0) {
                 setIsIndexing(true)
-                setIndexingProgress("Analyzing your schema...")
+                setIndexingProgress("Creating index for your schema...")
                 
-                // Index the current schema
                 const indexResponse = await fetch('/api/ai/index', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -207,12 +208,67 @@ export default function SidebarChat({
                     
                     // Small delay to show progress
                     await new Promise(resolve => setTimeout(resolve, 500))
+                    setIsIndexing(false)
+                    setIndexingProgress("")
+                    return true
                 } else {
-                    throw new Error('Failed to index schema')
+                    throw new Error('Failed to create index')
                 }
+            }
+            
+            // Index exists, check if it needs updating
+            // For now, we'll update the index to ensure it's current with any schema changes
+            // This ensures the index is always up-to-date with the latest schema modifications
+            setIsIndexing(true)
+            setIndexingProgress("Updating index with latest schema changes...")
+            
+            const indexResponse = await fetch('/api/ai/index', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    schemaId: currentSchemaId,
+                    sessionId: currentSessionId 
+                })
+            })
+            
+            if (indexResponse.ok) {
+                const indexData = await indexResponse.json()
+                setIndexingProgress(`Updated index with ${indexData.documentsIndexed} schema elements...`)
+                setIsIndexed(true)
                 
+                // Small delay to show progress
+                await new Promise(resolve => setTimeout(resolve, 500))
                 setIsIndexing(false)
                 setIndexingProgress("")
+                return true
+            } else {
+                throw new Error('Failed to update index')
+            }
+        } catch (error) {
+            console.error('Index check/update failed:', error)
+            setIsIndexing(false)
+            setIndexingProgress("")
+            return false
+        }
+    }, [currentSchemaId, sessionId])
+
+    const send = async () => {
+        const q = input.trim()
+        if (!q || isSending) return
+
+        const userMsg: ChatMessage = { id: crypto.randomUUID(), role: "user", text: q, createdAt: Date.now() }
+        setMessages((m) => [...m, userMsg])
+        setInput("")
+        setIsSending(true)
+
+        try {
+            // Get current session ID
+            const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
+            
+            // Always check and update index before asking questions
+            const indexReady = await checkAndUpdateIndex()
+            if (!indexReady) {
+                throw new Error('Failed to prepare index for querying')
             }
 
             // Send question to AI API
@@ -592,7 +648,7 @@ export default function SidebarChat({
                             AI Assistant
                         </div>
                         <div className="text-[11px] text-gray-500">
-                            {isIndexing ? indexingProgress : isIndexed ? 'Ready' : 'Initializing...'}
+                            {isIndexing ? indexingProgress : isIndexed ? 'Ready - Index will update automatically' : 'Ready - Index will be created automatically'}
                         </div>
                     </div>
                 </div>
@@ -632,8 +688,8 @@ export default function SidebarChat({
                             Ask questions about your schema. The AI will analyze your database structure and generate SQL queries with real data results.
                         </div>
                         {!isIndexed && !isIndexing && (
-                            <div className="mt-3 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-[12px] text-orange-700">
-                                ⚠️ Schema will be indexed automatically
+                            <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-[12px] text-blue-700">
+                                🔄 Schema will be indexed automatically when you ask a question
                             </div>
                         )}
                         {isIndexing && (

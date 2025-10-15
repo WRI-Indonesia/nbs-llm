@@ -16,43 +16,18 @@ interface AIRagItem {
     description: string;
 }
 
-interface AITableReasoning {
-    name: string;
-    reason: string;
-}
-
-interface AIColumnReasoning {
-    name?: string;
-    column?: string;
-    reason: string;
-}
-
-interface AIJoinReasoning {
-    left: string;
-    right: string;
-    reason: string;
-}
-
-interface AIReasoning {
-    tables?: AITableReasoning[];
-    columns?: AIColumnReasoning[];
-    join_keys?: AIJoinReasoning[] | Record<string, any>;
-}
-
-interface AISuggestions {
-    [key: string]: string;
-}
 
 interface AIResponseData {
-    sql?: string;
-    resultCount?: number;
-    columns?: string[];
-    result?: Record<string, unknown>[];
+    ok: boolean;
+    sql_initial?: string;
+    sql_final?: string;
+    executed?: boolean;
+    error?: string;
+    rows?: unknown[];
     used?: AIRagItem[];
     summary?: string;
-    reasoning?: AIReasoning;
-    suggestions?: AISuggestions;
-    simulated?: boolean;
+    suggestions?: string[];
+    rationale?: string;
 }
 
 function Spinner({ size = 16 }: { size?: number }) {
@@ -172,7 +147,7 @@ export default function SidebarChat({
                         if (msg.role === 'assistant' && msg.metadata) {
                             try {
                                 const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata
-                                if (metadata.sql || metadata.resultCount !== undefined || metadata.summary || metadata.reasoning) {
+                                if (metadata.sql_final || metadata.sql_initial || metadata.rows || metadata.summary || metadata.suggestions || metadata.rationale) {
                                     (message as any).data = metadata
                                     message.text = '' // Clear text since we'll render with accordions
                                 }
@@ -242,9 +217,12 @@ export default function SidebarChat({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     question: q,
-                    sessionId: currentSessionId,
                     topK: 8,
-                    minScore: 0.2
+                    minScore: 0.2,
+                    chatModel: 'gpt-4o-mini',
+                    useGraphJson: true,
+                    schemaId: currentSchemaId,
+                    execute: true
                 })
             })
 
@@ -302,75 +280,92 @@ export default function SidebarChat({
 
     const renderAssistant = (m: Extract<ChatMessage, { role: "assistant" }>) => {
         // For structured AI responses, render with accordions
-        if (m.data && (m.data.sql || m.data.resultCount !== undefined || m.data.summary || m.data.reasoning)) {
+        if (m.data && (m.data.sql_final || m.data.sql_initial || m.data.rows || m.data.summary || m.data.suggestions || m.data.rationale)) {
             const data = m.data as AIResponseData
             return (
                 <div className="space-y-3">
                     <Accordion type="multiple" className="w-full">
                         {/* Generated SQL Section */}
-                        {data.sql && (
+                        {(data.sql_final || data.sql_initial) && (
                             <AccordionItem value="sql" className="border border-purple-200 rounded-lg">
                                 <AccordionTrigger className="px-4 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-t-lg hover:no-underline">
                                     <div className="flex items-center gap-2">
                                         <Code className="h-4 w-4 text-purple-600" />
                                         <span className="font-medium text-purple-900">Generated SQL</span>
+                                        {data.error && (
+                                            <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                                                Error
+                                            </span>
+                                        )}
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
-                                    <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
-                                        <pre>{data.sql}</pre>
+                                    <div className="space-y-3">
+                                        {data.sql_initial && (
+                                            <div>
+                                                <div className="text-sm font-medium text-slate-700 mb-2">Final SQL:</div>
+                                                <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-x-auto">
+                                                    <pre>{data.sql_initial}</pre>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {data.error && (
+                                            <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
+                                                <div className="text-sm font-medium text-red-800 mb-1">Execution Error:</div>
+                                                <div className="text-sm text-red-700">{data.error}</div>
+                                            </div>
+                                        )}
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>
                         )}
 
                         {/* Table Results Section */}
-                        {data.resultCount !== undefined && (
+                        {data.rows && data.rows.length > 0 && (
                             <AccordionItem value="results" className="border border-green-200 rounded-lg">
                                 <AccordionTrigger className="px-4 py-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-t-lg hover:no-underline">
                                     <div className="flex items-center gap-2">
                                         <Table className="h-4 w-4 text-green-600" />
                                         <span className="font-medium text-green-900">Query Results</span>
-                                        <span className="text-sm text-green-700">({data.resultCount} rows)</span>
+                                        <span className="text-sm text-green-700">({data.rows.length} rows)</span>
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
-                                    {data.result && data.result.length > 0 ? (
-                                        <div className="space-y-2">
-                                            <div className="text-sm text-slate-600 mb-2">
-                                                Showing {data.result.length} of {data.resultCount} rows
-                                            </div>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full border-collapse border border-slate-300 text-sm">
-                                                    <thead>
-                                                        <tr className="bg-slate-100">
-                                                            {data.columns?.map((col: string) => (
-                                                                <th key={col} className="border border-slate-300 px-3 py-2 text-left font-medium">
-                                                                    {col}
-                                                                </th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {data.result.map((row: Record<string, unknown>, idx: number) => (
+                                    <div className="space-y-2">
+                                        <div className="text-sm text-slate-600 mb-2">
+                                            Showing {data.rows.length} rows
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full border-collapse border border-slate-300 text-sm">
+                                                <thead>
+                                                    <tr className="bg-slate-100">
+                                                        {Object.keys(data.rows[0] as Record<string, unknown>).map((col: string) => (
+                                                            <th key={col} className="border border-slate-300 px-3 py-2 text-left font-medium">
+                                                                {col}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {data.rows.map((row: unknown, idx: number) => {
+                                                        const rowData = row as Record<string, unknown>
+                                                        return (
                                                             <tr key={idx} className="hover:bg-slate-50">
-                                                                {data.columns?.map((col: string) => (
+                                                                {Object.entries(rowData).map(([col, value]) => (
                                                                     <td key={col} className="border border-slate-300 px-3 py-2">
-                                                                        {typeof row[col] === 'boolean' ? 
-                                                                            (row[col] ? '✓' : '✗') : 
-                                                                            String(row[col] || '')
+                                                                        {typeof value === 'boolean' ? 
+                                                                            (value ? '✓' : '✗') : 
+                                                                            String(value || '')
                                                                         }
                                                                     </td>
                                                                 ))}
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                    ) : (
-                                        <div className="text-slate-500 text-sm">No results found</div>
-                                    )}
+                                    </div>
                                 </AccordionContent>
                             </AccordionItem>
                         )}
@@ -441,93 +436,42 @@ export default function SidebarChat({
                             </AccordionItem>
                         )}
 
-                        {/* Reasoning Section */}
-                        {data.reasoning && (
-                            <AccordionItem value="reasoning" className="border border-orange-200 rounded-lg">
+                        {/* Rationale Section */}
+                        {data.rationale && (
+                            <AccordionItem value="rationale" className="border border-orange-200 rounded-lg">
                                 <AccordionTrigger className="px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-t-lg hover:no-underline">
                                     <div className="flex items-center gap-2">
                                         <Lightbulb className="h-4 w-4 text-orange-600" />
-                                        <span className="font-medium text-orange-900">SQL Reasoning</span>
+                                        <span className="font-medium text-orange-900">Rationale</span>
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
-                                    <div className="space-y-4">
-                                        {data.reasoning.tables && (
-                                            <div>
-                                                <h4 className="font-medium text-slate-900 mb-2">Table Selection:</h4>
-                                                <div className="space-y-2">
-                                                    {data.reasoning.tables.map((table: AITableReasoning, idx: number) => (
-                                                        <div key={idx} className="p-3 bg-slate-50 rounded-lg">
-                                                            <div className="font-medium text-slate-900">{table.name}</div>
-                                                            <div className="text-sm text-slate-600 mt-1">{table.reason}</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        
-                                        {data.reasoning.columns && (
-                                            <div>
-                                                <h4 className="font-medium text-slate-900 mb-2">Column Selection:</h4>
-                                                <div className="space-y-2">
-                                                    {data.reasoning.columns.map((col: AIColumnReasoning, idx: number) => (
-                                                        <div key={idx} className="p-3 bg-slate-50 rounded-lg">
-                                                            <div className="font-medium text-slate-900">{col.name || col.column}</div>
-                                                            <div className="text-sm text-slate-600 mt-1">{col.reason}</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {data.reasoning.join_keys && (
-                                            <div>
-                                                <h4 className="font-medium text-slate-900 mb-2">Join Logic:</h4>
-                                                <div className="space-y-2">
-                                                    {Array.isArray(data.reasoning.join_keys) ? (
-                                                        data.reasoning.join_keys.map((join: AIJoinReasoning, idx: number) => (
-                                                            <div key={idx} className="p-3 bg-slate-50 rounded-lg">
-                                                                <div className="font-medium text-slate-900">
-                                                                    {join.left} ↔ {join.right}
-                                                                </div>
-                                                                <div className="text-sm text-slate-600 mt-1">{join.reason}</div>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        Object.entries(data.reasoning.join_keys).map(([key, join]: [string, any], idx: number) => (
-                                                            <div key={idx} className="p-3 bg-slate-50 rounded-lg">
-                                                                <div className="font-medium text-slate-900">
-                                                                    {join.left || join.left_table} ↔ {join.right || join.right_table}
-                                                                </div>
-                                                                <div className="text-sm text-slate-600 mt-1">{join.reason || join.justification}</div>
-                                                            </div>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
+                                    <div className="prose prose-sm max-w-none text-slate-700">
+                                        {data.rationale.split('\n').map((line: string, idx: number) => (
+                                            <p key={idx} className="mb-2 last:mb-0">
+                                                {line}
+                                            </p>
+                                        ))}
                                     </div>
                                 </AccordionContent>
                             </AccordionItem>
                         )}
 
                         {/* Suggestions Section */}
-                        {data.suggestions && (
+                        {data.suggestions && data.suggestions.length > 0 && (
                             <AccordionItem value="suggestions" className="border border-teal-200 rounded-lg">
                                 <AccordionTrigger className="px-4 py-3 bg-gradient-to-r from-teal-50 to-emerald-50 rounded-t-lg hover:no-underline">
                                     <div className="flex items-center gap-2">
                                         <Lightbulb className="h-4 w-4 text-teal-600" />
                                         <span className="font-medium text-teal-900">Suggestions</span>
+                                        <span className="text-sm text-teal-700">({data.suggestions.length} items)</span>
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="px-4 pt-4 pb-4">
                                     <div className="space-y-3">
-                                        {Object.entries(data.suggestions).map(([key, value]: [string, string]) => (
-                                            <div key={key} className="p-3 bg-slate-50 rounded-lg">
-                                                <div className="font-medium text-slate-900 capitalize mb-1">
-                                                    {key.replace(/_/g, ' ')}
-                                                </div>
-                                                <div className="text-sm text-slate-600">{value}</div>
+                                        {data.suggestions.map((suggestion: string, idx: number) => (
+                                            <div key={idx} className="p-3 bg-slate-50 rounded-lg">
+                                                <div className="text-sm text-slate-700">{suggestion}</div>
                                             </div>
                                         ))}
                                     </div>

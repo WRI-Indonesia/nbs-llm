@@ -1,14 +1,18 @@
+// app/api/ask/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import OpenAI from 'openai'
 
+/** ---------- OpenAI Setup ---------- */
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY!,
 })
 
 const EMBED_MODEL = process.env.EMBED_MODEL_NAME || 'text-embedding-3-large'
 const CHAT_MODEL_DEFAULT = process.env.CHAT_MODEL || 'gpt-4o-mini'
 
+/** ---------- System Prompts ---------- */
+/** (A) Plain-Table SQL from RAG (imagined physical tables) */
 const SQL_SYSTEM_PROMPT = `You are a precise SQL generator for PostgreSQL.
 
 Rules:
@@ -18,312 +22,152 @@ Rules:
 - Prefer ANSI SQL compatible with PostgreSQL.
 - If dates are strings, cast only when necessary.
 - If a query is ambiguous, make the most reasonable minimal assumption.
-- Do not invent tables or columns.`
+- Do not invent tables or columns.
+- IMPORTANT: Assume the schema exists as PHYSICAL TABLES (not JSON).
+- DO NOT reference public."schemas" or "graphJson" here.`
 
+/** (B) JSON-Graph SQL that reads from public."schemas"."graphJson" */
+const SQL_SYSTEM_PROMPT_JSON_GRAPH = `
+You are a precise SQL generator for PostgreSQL that reads a JSON graph stored in public."schemas"."graphJson" (jsonb).
+
+Graph shape:
+{
+  "nodes": [
+    {
+      "id": "table-1",
+      "type": "table",
+      "data": {
+        "table": "<table_name>",
+        "columns": [ { "name": "...", "type": "...", ... }, ... ],
+        "data": [ { "<col>": <val>, ... }, ... ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "<table-node-id>",
+      "target": "<table-node-id>",
+      "sourceHandle": "<table>__<column>__out",
+      "targetHandle": "<table>__<column>__in"
+    }
+  ]
+}
+
+Rules:
+- Output a single SQL code block without commentary.
+- Always start with these CTEs (exact spellings):
+
+  WITH src AS (
+    SELECT "graphJson"::jsonb AS j
+    FROM public."schemas"
+    WHERE id = $SCHEMA_ID$
+  ),
+  rows AS (
+    SELECT (n->'data'->>'table') AS table_name,
+           jsonb_array_elements(n->'data'->'data') AS row
+    FROM src s
+    CROSS JOIN LATERAL jsonb_array_elements(s.j->'nodes') n
+    WHERE n->>'type' = 'table'
+  )
+
+- NEVER use SELECT *; always enumerate columns.
+- Use REAL column names from the data; when present in RAG hints, prefer those exact names.
+- Alias any colliding names to be unambiguous in the final SELECT:
+  users.created_at       AS user_created_at
+  comments.created_at    AS comment_created_at
+  posts.created_at       AS post_created_at
+
+- Prefer obvious FK joins (e.g., comments.post_id = posts.id). If ambiguous, derive from edges:
+  - sourceHandle/targetHandle format: "<table>__<column>__out|in"
+  - Only use join pairs that exist in the data.
+- Use explicit casts only when necessary (e.g., ::int for numeric ids).
+- Do not invent table or column names.
+- End with a single SELECT.`
+
+/** Reviewer prompt that focuses on PROMPT & DATA (not SQL/JSON formats) */
+const REVIEW_SYSTEM_PROMPT = `
+You are a concise reviewer.
+
+Your job:
+- Summarize what the result set gives in terms of the user's question (focus on entities/fields from the prompt).
+- Offer short, practical suggestions to better satisfy the prompt using available data (filters, fields, grouping), not formatting advice.
+- Explain WHY this SQL is justified by (1) signals in the user prompt and (2) evidence from the available schema/data,
+  including key join reasons from FK hints.
+
+Return STRICT JSON with this shape:
+
+{
+  "summary": "1–3 sentences about the returned data, referencing user-intent and fields.",
+  "suggestions": ["concise, actionable changes based on prompt & data (e.g., add filter by published=true)", "..."],
+  "derivation": {
+    "from_prompt": ["which entities/fields/constraints the prompt implies", "..."],
+    "from_data": ["which tables/columns exist and match the prompt terms", "..."],
+    "join_logic": ["explain the chosen joins using FK hints", "..."]
+  }
+}
+
+DO NOT talk about SQL/JSON formatting or engine details.
+DO NOT include backticks or extra text.`
+
+/** ---------- Types ---------- */
 interface AskBody {
   question: string
   topK?: number
   minScore?: number
   chatModel?: string
-  sessionId?: string
+  useGraphJson?: boolean   // default TRUE (affects final SQL + execution)
   schemaId?: string
+  execute?: boolean        // default TRUE (executes final SQL)
 }
 
-// Simple text similarity function (fallback when pgvector is not available)
+/** ---------- Similarity Helpers ---------- */
 function calculateTextSimilarity(query: string, text: string): number {
-  const queryWords = query.toLowerCase().split(/\s+/)
+  const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean)
   const textWords = text.toLowerCase().split(/\s+/)
-  
+  if (queryWords.length === 0) return 0
   let matches = 0
-  for (const word of queryWords) {
-    if (textWords.includes(word)) {
-      matches++
-    }
-  }
-  
+  for (const w of queryWords) if (textWords.includes(w)) matches++
   return matches / queryWords.length
 }
 
-// Get embeddings from OpenAI
 async function getEmbedding(text: string): Promise<number[]> {
-  try {
-    const response = await openai.embeddings.create({
-      model: EMBED_MODEL,
-      input: text,
-    })
-    return response.data[0].embedding
-  } catch (error) {
-    console.error('Error getting embedding:', error)
-    throw new Error('Failed to get embedding')
-  }
+  const resp = await openai.embeddings.create({ model: EMBED_MODEL, input: text })
+  return resp.data[0].embedding
 }
 
-// Calculate cosine similarity
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0
-  
-  let dotProduct = 0
-  let normA = 0
-  let normB = 0
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i]
-    normA += a[i] * a[i]
-    normB += b[i] * b[i]
-  }
-  
-  if (normA === 0 || normB === 0) return 0
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i] }
+  if (na === 0 || nb === 0) return 0
+  return dot / (Math.sqrt(na) * Math.sqrt(nb))
 }
 
-// Fetch RAG docs from database
+/** ---------- RAG Docs ---------- */
 async function fetchRagDocs() {
   try {
-    const docs = await prisma.ragDoc.findMany({
-      orderBy: { id: 'asc' }
-    })
-    
-    return docs.map(doc => ({
+    const docs = await prisma.ragDoc.findMany({ orderBy: { id: 'asc' } })
+    return docs.map((doc: any) => ({
       id: doc.id,
-      text: doc.text,
+      text: doc.text as string,
       payload: doc.payload as any,
-      embedding: doc.embedding
+      embedding: doc.embedding as string | null,
     }))
-  } catch (error) {
-    console.error('Error fetching RAG docs:', error)
+  } catch (e) {
+    console.error('Error fetching RAG docs:', e)
     return []
   }
 }
 
-// Get schema by ID
-async function getSchemaById(schemaId: string) {
-  try {
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/schemas/${schemaId}`)
-    if (response.ok) {
-      const data = await response.json()
-      return data.schema
-    }
-    return null
-  } catch (error) {
-    console.error('Error fetching schema by ID:', error)
-    return null
-  }
-}
+/** ---------- Prompt Builders ---------- */
+function buildUserPrompt(
+  question: string,
+  contextSnips: Array<{ text: string; payload: any; score: number }>
+): string {
+  const ctx = contextSnips
+    .map((s, i) => `#${i + 1} (${s.payload?.kind || '?'}) ${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}\n${s.text}`)
+    .join('\n\n')
 
-// Get current schema data for simulation (fallback)
-async function getCurrentSchema(sessionId?: string) {
-  try {
-    if (!sessionId) return null
-    
-    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/schemas?sessionId=${sessionId}`)
-    if (response.ok) {
-      const data = await response.json()
-      return data.schemas?.find((s: any) => s.name === 'default')
-    }
-    return null
-  } catch (error) {
-    console.error('Error fetching current schema:', error)
-    return null
-  }
-}
-
-// Execute SQL query directly against the database using Prisma
-async function executeSQLQuery(sql: string): Promise<{ result: any[], columns: string[], error?: string }> {
-  try {
-    console.log('Executing SQL:', sql)
-    
-    // Use Prisma's raw query functionality
-    const result = await prisma.$queryRawUnsafe(sql)
-    
-    // Convert result to array format
-    const resultArray = Array.isArray(result) ? result : [result]
-    
-    // Extract column names from the first row if available
-    let columns: string[] = []
-    if (resultArray.length > 0 && typeof resultArray[0] === 'object') {
-      columns = Object.keys(resultArray[0])
-    }
-    
-    return {
-      result: resultArray,
-      columns
-    }
-  } catch (error: any) {
-    console.error('SQL execution error:', error)
-    return {
-      result: [],
-      columns: [],
-      error: error.message
-    }
-  }
-}
-
-// Get list of actual tables in the database
-async function getActualTables(): Promise<string[]> {
-  try {
-    const result = await prisma.$queryRawUnsafe(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_type = 'BASE TABLE'
-    `) as any[]
-    
-    return result.map(row => row.table_name)
-  } catch (error) {
-    console.error('Error getting actual tables:', error)
-    return []
-  }
-}
-
-// Convert OpenAI generated SQL to query schema data using OpenAI with retry loop
-async function convertToSchemaDataQuery(sql: string, schemaData: any, schemaId: string): Promise<string> {
-  try {
-    if (!schemaData?.graphJson?.nodes) {
-      return sql // Return original SQL if no schema data
-    }
-
-    // Extract table names from SQL
-    const tableMatches = sql.match(/\b(?:FROM|JOIN)\s+(\w+)/gi) || []
-    const tables = tableMatches.map(match => match.replace(/(?:FROM|JOIN)\s+/i, '').toLowerCase())
-
-    console.log('Extracted tables from SQL:', tables)
-    console.log('Schema nodes:', schemaData.graphJson.nodes.map((n: any) => ({ type: n.type, table: n.data?.table })))
-
-    if (tables.length === 0) {
-      console.log('No tables found in SQL, returning original')
-      return sql // No tables found in SQL
-    }
-
-    // Find matching table nodes in the schema
-    const matchingNodes = schemaData.graphJson.nodes.filter((node: any) => 
-      node.type === 'table' && tables.includes(node.data.table.toLowerCase())
-    )
-
-    console.log('Matching nodes found:', matchingNodes.length)
-
-    if (matchingNodes.length === 0) {
-      console.log('No matching tables found in schema, returning original')
-      return sql // No matching tables found
-    }
-
-    // Get the first matching table for context
-    const firstNode = matchingNodes[0]
-    const tableName = firstNode.data.table.toLowerCase()
-    const tableData = firstNode.data.data
-
-    // Check if this table has actual data stored in the schema
-    if (tableData && Array.isArray(tableData) && tableData.length > 0) {
-      const firstRow = tableData[0]
-      
-      // Check if this looks like a data structure
-      if (typeof firstRow === 'object' && firstRow !== null) {
-        
-        // Retry loop to get correct SQL conversion
-        let attempts = 0
-        const maxAttempts = 3
-        let lastError = ''
-        let basePrompt = `You are a PostgreSQL expert specializing in JSONB queries.
-
-TASK: Convert the following SQL query to work with schema data stored in JSONB format.
-
-ORIGINAL SQL:
-${sql}
-
-SCHEMA STRUCTURE:
-- Schema ID: ${schemaId}
-- Table Name: ${tableName}
-- Data is stored in: schemas.graphJson.nodes[].data.data[]
-- Sample data structure: ${JSON.stringify(firstRow, null, 2)}
-
-REQUIREMENTS:
-1. Convert the query to use the schemas table with JSONB operations
-2. Use CROSS JOIN LATERAL with jsonb_array_elements to extract data
-3. Filter by schema ID and table name
-4. Handle all column references with proper JSONB field access (rec->>'column_name')
-5. Cast numeric fields appropriately (::numeric for numbers)
-6. Handle subqueries by converting them to use the same schema structure
-7. Remove table aliases from column references
-8. Maintain all original logic (WHERE, ORDER BY, LIMIT, etc.)
-9. For subqueries, use different aliases (s2, node2, rec2) to avoid conflicts
-10. Ensure all WHERE clauses in subqueries use proper table prefixes (s2.id, not just id)
-
-CRITICAL RULES:
-- Subqueries must use s2.id = '${schemaId}' not just id = '${schemaId}'
-- Column names in subqueries should be simple (e.g., 'density' not 'AVG(density)')
-- Avoid nested function calls in JSONB field access
-- Each subquery should be self-contained with proper FROM and WHERE clauses
-
-OUTPUT FORMAT:
-Return ONLY the converted SQL query, no explanations or markdown formatting.
-
-EXAMPLE CONVERSION:
-Original: SELECT p.district_name, p.population FROM people p WHERE p.density > (SELECT AVG(density) FROM people)
-Converted: SELECT rec->>'district_name' AS district_name, (rec->>'population')::numeric AS population FROM schemas s CROSS JOIN LATERAL jsonb_array_elements(s."graphJson"->'nodes') AS node CROSS JOIN LATERAL jsonb_array_elements(node->'data'->'data') AS rec WHERE s.id = '${schemaId}' AND node->'data'->>'table' = '${tableName}' AND (rec->>'density')::numeric > (SELECT AVG((rec2->>'density')::numeric) FROM schemas s2 CROSS JOIN LATERAL jsonb_array_elements(s2."graphJson"->'nodes') AS node2 CROSS JOIN LATERAL jsonb_array_elements(node2->'data'->'data') AS rec2 WHERE s2.id = '${schemaId}' AND node2->'data'->>'table' = '${tableName}')`
-        
-        while (attempts < maxAttempts) {
-          attempts++
-          console.log(`SQL conversion attempt ${attempts}/${maxAttempts}`)
-          
-          try {
-            // Use OpenAI to convert the SQL to JSONB query
-            let conversionPrompt = basePrompt
-
-            const conversionResponse = await openai.chat.completions.create({
-              model: CHAT_MODEL_DEFAULT,
-              temperature: 0.1,
-              messages: [
-                { role: 'system', content: 'You are a PostgreSQL JSONB expert. Convert SQL queries to work with JSONB schema data. Be precise and avoid nested function calls.' },
-                { role: 'user', content: conversionPrompt }
-              ],
-            })
-
-            const convertedSQL = conversionResponse.choices[0].message.content?.trim() || sql
-            console.log(`Attempt ${attempts} - OpenAI converted SQL:`, convertedSQL)
-            
-            // Test the SQL by trying to execute it
-            const testResult = await executeSQLQuery(convertedSQL)
-            
-            if (!testResult.error) {
-              console.log(`✅ SQL conversion successful on attempt ${attempts}`)
-              return convertedSQL
-            } else {
-              lastError = testResult.error
-              console.log(`❌ Attempt ${attempts} failed:`, testResult.error)
-              
-              // If this is not the last attempt, add error context for next attempt
-              if (attempts < maxAttempts) {
-                basePrompt += `\n\nPREVIOUS ATTEMPT FAILED WITH ERROR: ${testResult.error}\nPlease fix the SQL and try again.`
-              }
-            }
-            
-          } catch (conversionError: any) {
-            lastError = conversionError.message
-            console.log(`❌ Conversion attempt ${attempts} error:`, conversionError.message)
-          }
-        }
-        
-        // If all attempts failed, return original SQL
-        console.log(`❌ All ${maxAttempts} conversion attempts failed. Last error: ${lastError}`)
-        return sql
-      }
-    }
-
-    return sql // Return original SQL if no conversion needed
-    
-  } catch (error) {
-    console.error('Error converting to schema data query:', error)
-    return sql // Return original SQL on error
-  }
-}
-
-
-
-// Build user prompt with context
-function buildUserPrompt(question: string, contextSnips: Array<{text: string, payload: any, score: number}>): string {
-  const ctx = contextSnips.map((s, i) => 
-    `#${i+1} (${s.payload?.kind || '?'}) ${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}\n${s.text}`
-  ).join('\n\n')
-  
   const joinHints = contextSnips
     .filter(s => s.payload?.kind === 'column' && s.payload?.isForeignKey)
     .map(s => {
@@ -333,94 +177,99 @@ function buildUserPrompt(question: string, contextSnips: Array<{text: string, pa
       }
       return null
     })
-    .filter(Boolean)
-  
-  const hintsBlock = joinHints.length > 0 
-    ? `Join Hints (from FK metadata):\n${joinHints.map(h => `- ${h}`).join('\n')}`
-    : 'Join Hints (from FK metadata):\n(none)'
-  
+    .filter(Boolean) as string[]
+
+  const hintsBlock =
+    joinHints.length > 0
+      ? `Foreign-Key Join Hints:\n${joinHints.map(h => `- ${h}`).join('\n')}`
+      : 'Foreign-Key Join Hints:\n(none)'
+
   return `${hintsBlock}\n\nContext (top matches):\n${ctx}\n\nUser question:\n${question}\n\nProduce valid PostgreSQL SQL:`
 }
 
-// Extract SQL from response
+/** Build column hints from RAG (prevents wrong names like body/content mixups) */
+function buildColumnHints(contextSnips: Array<{ text: string; payload: any; score: number }>) {
+  const byTable: Record<string, Set<string>> = {}
+  for (const s of contextSnips) {
+    const t = s.payload?.table
+    const c = s.payload?.column
+    if (!t || !c) continue
+    if (!byTable[t]) byTable[t] = new Set()
+    byTable[t].add(c)
+  }
+  const lines: string[] = []
+  for (const [t, cols] of Object.entries(byTable)) {
+    lines.push(`- ${t}: ${Array.from(cols).sort().join(', ')}`)
+  }
+  // Explicit reminders for your dataset
+  const reminders = [
+    `Examples from data:`,
+    `- posts has "content" (NOT "body")`,
+    `- comments has "text" (NOT "content")`,
+    `- users has "created_at"`,
+  ]
+  return lines.length
+    ? `Column Map Hints:\n${lines.join('\n')}\n\n${reminders.join('\n')}`
+    : `Column Map Hints:\n(none)\n\n${reminders.join('\n')}`
+}
+
+/** ---------- SQL Extraction & Safety ---------- */
 function extractSql(text: string): string {
-  // First try to extract from SQL code blocks
-  const sqlMatch = text.match(/```sql\s*([\s\S]*?)\s*```/i)
-  if (sqlMatch) {
-    return sqlMatch[1].trim()
-  }
-  
-  // Try to extract from generic code blocks
-  const codeMatch = text.match(/```\s*([\s\S]*?)\s*```/)
-  if (codeMatch) {
-    return codeMatch[1].trim()
-  }
-  
-  // Try to extract SQL after "Generated SQL:" or similar patterns
-  const generatedMatch = text.match(/(?:Generated SQL|SQL):\s*([\s\S]*?)(?:\n\n|\nSummary|\nReasoning|$)/i)
-  if (generatedMatch) {
-    return generatedMatch[1].trim()
-  }
-  
-  // If no patterns match, return the whole text trimmed
+  const sqlBlock = text.match(/```sql\s*([\s\S]*?)\s*```/i)
+  if (sqlBlock) return sqlBlock[1].trim()
+  const anyBlock = text.match(/```\s*([\s\S]*?)\s*```/)
+  if (anyBlock) return anyBlock[1].trim()
+  const afterLabel = text.match(/(?:Generated SQL|SQL):\s*([\s\S]*?)(?:\n\n|\nSummary|\nReasoning|$)/i)
+  if (afterLabel) return afterLabel[1].trim()
   return text.trim()
 }
 
-// Save chat message
-async function saveChatMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string, metadata?: any) {
-  try {
-    await prisma.chatMessage.create({
-      data: {
-        sessionId,
-        role,
-        content,
-        metadata: metadata || {}
-      }
-    })
-  } catch (error) {
-    console.error('Error saving chat message:', error)
-  }
+function isSelectOnly(sql: string): boolean {
+  const t = sql.trim().toLowerCase()
+  const startsOk = t.startsWith('with') || t.startsWith('select')
+  const forbidden = /(insert|update|delete|alter|drop|truncate|create|grant|revoke|comment|vacuum|analyze|refresh\s+materialized\s+view)\b/i.test(sql)
+  return startsOk && !forbidden
 }
 
-// Get chat history
-async function getChatHistory(sessionId: string, limit: number = 10) {
-  try {
-    const messages = await prisma.chatMessage.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'desc' },
-      take: limit
-    })
-    
-    return messages.reverse().map(msg => ({
-      role: msg.role,
-      content: msg.content,
-      metadata: msg.metadata,
-      created_at: msg.createdAt
-    }))
-  } catch (error) {
-    console.error('Error getting chat history:', error)
-    return []
-  }
+function targetsJsonGraph(sql: string): boolean {
+  return /\bWITH\s+src\s+AS\s*\(\s*SELECT\s+"graphJson"::jsonb\s+AS\s+j\s+FROM\s+public\."schemas"\s+WHERE\s+id\s*=\s*\$SCHEMA_ID\$\s*\)\s*,\s*rows\s+AS\s*\(/i.test(sql)
 }
 
+function mentionsGraphJson(sql: string): boolean {
+  return /public\."schemas"|graphjson/i.test(sql)
+}
+
+function usesSelectStar(sql: string): boolean {
+  return /\bselect\b[^;]*\*/i.test(sql)
+}
+
+function safeJsonParse<T>(s: string): T | null {
+  try { return JSON.parse(s) as T } catch { return null }
+}
+
+/** ---------- Route Handler ---------- */
 export async function POST(request: NextRequest) {
   try {
     const body: AskBody = await request.json()
-    const { question, topK = 8, minScore = 0.2, chatModel = CHAT_MODEL_DEFAULT, sessionId, schemaId } = body
-    
+    const {
+      question,
+      topK = 8,
+      minScore = 0.2,
+      chatModel = CHAT_MODEL_DEFAULT,
+      // defaults per your request
+      useGraphJson = true,
+      schemaId,
+      execute = true,
+    } = body
+
     if (!question || question.trim().length < 3) {
-      return NextResponse.json(
-        { error: 'Question must be at least 3 characters long' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Question must be at least 3 characters long' }, { status: 400 })
     }
-    
-    // Save user message
-    if (sessionId) {
-      await saveChatMessage(sessionId, 'user', question)
+    if (useGraphJson && !schemaId) {
+      return NextResponse.json({ error: 'schemaId is required when useGraphJson is true' }, { status: 400 })
     }
-    
-    // 1) Load RAG docs
+
+    // (1) Load RAG docs
     const ragDocs = await fetchRagDocs()
     if (ragDocs.length === 0) {
       return NextResponse.json(
@@ -428,328 +277,256 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
-    
-    // 2) Retrieve top-K by similarity
-    let topSnips: Array<{text: string, payload: any, score: number}> = []
-    
+
+    // (2) Retrieve top-K by similarity
+    let topSnips: Array<{ text: string; payload: any; score: number }> = []
+
     if (ragDocs[0].embedding) {
-      // Use vector similarity if embeddings are available
       try {
         const queryEmbedding = await getEmbedding(question)
-        
-        const similarities = ragDocs.map(doc => {
-          if (!doc.embedding) return { doc, score: 0 }
-          
+        const sims = ragDocs.map(doc => {
           try {
-            const docEmbedding = JSON.parse(doc.embedding)
-            const score = cosineSimilarity(queryEmbedding, docEmbedding)
+            const emb = doc.embedding ? JSON.parse(doc.embedding) as number[] : null
+            const score = emb ? cosineSimilarity(queryEmbedding, emb) : 0
             return { doc, score }
           } catch {
             return { doc, score: 0 }
           }
         })
-        
-        const filtered = similarities
+        const filtered = sims
           .filter(s => s.score >= minScore)
           .sort((a, b) => b.score - a.score)
           .slice(0, topK)
-        
-        topSnips = filtered.map(s => ({
-          text: s.doc.text,
-          payload: s.doc.payload,
-          score: s.score
-        }))
-      } catch (error) {
-        console.error('Error with vector similarity:', error)
-        // Fallback to text similarity
+        topSnips = filtered.map(s => ({ text: s.doc.text, payload: s.doc.payload, score: s.score }))
+      } catch (e) {
+        console.error('Vector similarity failed, falling back to text similarity:', e)
       }
     }
-    
-    // Fallback to text similarity if no embeddings or vector similarity failed
+
     if (topSnips.length === 0) {
-      const similarities = ragDocs.map(doc => ({
+      const sims = ragDocs.map(doc => ({
         doc,
-        score: calculateTextSimilarity(question, doc.text)
+        score: calculateTextSimilarity(question, doc.text),
       }))
-      
-      const filtered = similarities
+      const filtered = sims
         .filter(s => s.score >= minScore)
         .sort((a, b) => b.score - a.score)
         .slice(0, topK)
-      
-      topSnips = filtered.map(s => ({
-        text: s.doc.text,
-        payload: s.doc.payload,
-        score: s.score
-      }))
+      topSnips = filtered.map(s => ({ text: s.doc.text, payload: s.doc.payload, score: s.score }))
     }
-    
+
     if (topSnips.length === 0) {
-      return NextResponse.json(
-        { error: 'No sufficiently similar schema snippets found.' },
-        { status: 422 }
-      )
+      return NextResponse.json({ error: 'No sufficiently similar schema snippets found.' }, { status: 422 })
     }
-    
-    // 2b) Augment context with FK columns
-    const involvedTables = new Set(
-      topSnips.map(s => s.payload?.table).filter(Boolean)
-    )
-    
-    const fkSnips: Array<{text: string, payload: any, score: number}> = []
-    const seenKeys = new Set<string>()
-    
+
+    // (2b) Augment with FK columns from involved tables
+    const involvedTables = new Set(topSnips.map(s => s.payload?.table).filter(Boolean))
+    const fkSnips: Array<{ text: string; payload: any; score: number }> = []
+    const seen = new Set<string>()
+
     for (const doc of ragDocs) {
-      if (doc.payload?.kind === 'column' && 
-          doc.payload?.isForeignKey && 
-          involvedTables.has(doc.payload?.table)) {
+      if (
+        doc.payload?.kind === 'column' &&
+        doc.payload?.isForeignKey &&
+        involvedTables.has(doc.payload?.table)
+      ) {
         const key = `${doc.payload.table}.${doc.payload.column}`
-        if (!seenKeys.has(key)) {
-          fkSnips.push({
-            text: doc.text,
-            payload: doc.payload,
-            score: 1.0
-          })
-          seenKeys.add(key)
+        if (!seen.has(key)) {
+          fkSnips.push({ text: doc.text, payload: doc.payload, score: 1.0 })
+          seen.add(key)
         }
       }
     }
-    
     const contextSnips = [...fkSnips, ...topSnips]
-    
-    // 3) Get chat history for context
-    let chatHistory: Array<{role: string, content: string}> = []
-    if (sessionId) {
-      const history = await getChatHistory(sessionId, 6)
-      chatHistory = history.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }))
-    }
-    
-    // 4) Ask OpenAI to generate SQL
-    const userPrompt = buildUserPrompt(question, contextSnips)
-    
-    const messages = [
+    const columnHints = buildColumnHints(contextSnips)
+
+    /** (3) INITIAL SQL (PLAIN TABLE) */
+    const messagesInitial = [
       { role: 'system', content: SQL_SYSTEM_PROMPT },
-      ...chatHistory.slice(-4), // Include last 4 messages for context
-      { role: 'user', content: userPrompt }
-    ]
-    
-    const chat = await openai.chat.completions.create({
+      { role: 'user', content: buildUserPrompt(question, contextSnips) },
+    ] as const
+
+    const chatInitial = await openai.chat.completions.create({
       model: chatModel,
       temperature: 0.1,
-      messages: messages as any,
+      messages: messagesInitial as any,
     })
-    
-    const raw = chat.choices[0].message.content || ''
-    const sql = extractSql(raw)
-    
-    // 5) Get schema data and convert SQL to JSONB format
-    let schemaData = null
-    
-    // Try to get schema by ID first, then fallback to sessionId
-    if (schemaId) {
-      schemaData = await getSchemaById(schemaId)
-    }
-    
-    if (!schemaData && sessionId) {
-      schemaData = await getCurrentSchema(sessionId)
-    }
-    
-    // Debug: Log schema structure and actual tables
-    console.log('Schema data:', JSON.stringify(schemaData, null, 2))
-    const actualTables = await getActualTables()
-    console.log('Actual tables in database:', actualTables)
-    console.log('Schema ID:', schemaId)
-    
-    // Convert OpenAI generated SQL to query schema data from schemas table using OpenAI
-    const executableSQL = await convertToSchemaDataQuery(sql, schemaData, schemaId || '')
-    console.log('OpenAI Converted SQL:', executableSQL)
-    
-    // Execute SQL query directly against the database
-    const { result, columns, error: sqlError } = await executeSQLQuery(executableSQL)
-    
-    // If SQL execution failed, try with original SQL as fallback
-    if (sqlError) {
-      console.warn('JSONB SQL failed, trying original SQL:', sqlError)
-      const { result: fallbackResult, columns: fallbackColumns, error: fallbackError } = await executeSQLQuery(sql)
-      
-      if (fallbackError) {
-        console.error('Both SQL queries failed:', fallbackError)
-        return NextResponse.json(
-          { 
-            error: 'SQL execution failed', 
-            details: fallbackError,
-            debug: {
-              originalSQL: sql,
-              convertedSQL: executableSQL,
-              actualTables: actualTables,
-              schemaTables: schemaData?.graphJson?.nodes?.map((n: any) => n.data?.table).filter(Boolean) || []
-            }
-          },
-          { status: 500 }
-        )
-      }
-      
-      // Use fallback results
-      const finalResult = fallbackResult
-      const finalColumns = fallbackColumns
-      const finalSQL = sql
-      
-      // Continue with fallback results...
-      const response = {
-        ok: true,
-        sql: finalSQL,
-        executableSQL: executableSQL,
-        sqlError: sqlError,
-        used: contextSnips.map(s => ({
-          key: `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`,
-          score: s.score,
-          kind: s.payload?.kind,
-          table: s.payload?.table,
-          isForeignKey: s.payload?.isForeignKey || false,
-          description: s.text,
-        })),
-        resultCount: finalResult.length,
-        columns: finalColumns,
-        result: finalResult,
-        reasoning: '',
-        sql_rationale: '',
-        suggestions: '',
-        summary: '',
-        simulated: false,
-      }
-      
-      return NextResponse.json(response)
-    }
-    
-    // 6) Generate explanation and summary using OpenAI
-    const explainPrompt = `You are an AI data assistant helping users understand and improve automatically generated SQL.
+    let sql_initial = extractSql(chatInitial.choices?.[0]?.message?.content || '')
 
-User question:
+    // Guard: initial must NOT reference graphJson/public."schemas"
+    if (mentionsGraphJson(sql_initial) || sql_initial.trim().length === 0) {
+      const retry = await openai.chat.completions.create({
+        model: chatModel,
+        temperature: 0.1,
+        messages: [
+          ...messagesInitial,
+          { role: 'user', content: 'Regenerate for PHYSICAL tables only. DO NOT reference public."schemas" or "graphJson".' }
+        ] as any,
+      })
+      sql_initial = extractSql(retry.choices?.[0]?.message?.content || sql_initial)
+    }
+
+    /** (4) FINAL SQL (JSON GRAPH) — translate the initial into graphJson form with strict constraints */
+    let sql_final = sql_initial
+    if (useGraphJson) {
+      const messagesFinal = [
+        { role: 'system', content: SQL_SYSTEM_PROMPT_JSON_GRAPH },
+        {
+          role: 'user',
+          content:
+`Translate the following plain-table SQL to read from public."schemas"."graphJson" using the mandatory src/rows CTEs.
+STRICTLY follow these constraints:
+- DO NOT use SELECT *; enumerate columns.
+- Use the exact column names from hints.
+- Map the following collisions with aliases:
+  users.created_at AS user_created_at
+  comments.created_at AS comment_created_at
+  posts.created_at AS post_created_at
+- If a column doesn't exist in the hints/data, do NOT include it.
+
+SCHEMA_ID: ${schemaId}
+
+${columnHints}
+
+PLAIN SQL:
+${sql_initial}
+`
+        }
+      ] as const
+
+      const chatFinal = await openai.chat.completions.create({
+        model: chatModel,
+        temperature: 0.1,
+        messages: messagesFinal as any,
+      })
+      sql_final = extractSql(chatFinal.choices?.[0]?.message?.content || '')
+
+      // Ensure it targets graphJson and avoids SELECT *
+      if (!targetsJsonGraph(sql_final) || usesSelectStar(sql_final)) {
+        const retry = await openai.chat.completions.create({
+          model: chatModel,
+          temperature: 0.1,
+          messages: [
+            ...messagesFinal,
+            { role: 'user', content: 'The SQL must START with src and rows CTEs using graphJson, and MUST NOT use SELECT *. Regenerate exactly as instructed.' }
+          ] as any,
+        })
+        sql_final = extractSql(retry.choices?.[0]?.message?.content || sql_final)
+      }
+
+      // Substitute schema token
+      if (schemaId) {
+        sql_final = sql_final.replace(/\$SCHEMA_ID\$/g, `'${schemaId.replace(/'/g, "''")}'`)
+      }
+    }
+
+    /** (5) Execute FINAL SQL (SELECT-only) */
+    let rows: unknown[] | undefined
+    let execError: string | undefined
+    let executed = false
+
+    if (execute) {
+      try {
+        const candidate = sql_final
+        if (!isSelectOnly(candidate)) {
+          throw new Error('Generated SQL rejected by safety check (SELECT/CTE only).')
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const result = await prisma.$queryRawUnsafe(candidate)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        rows = Array.isArray(result) ? result as unknown[] : []
+        executed = true
+      } catch (e: any) {
+        execError = e?.message || 'Failed to execute SQL'
+      }
+    }
+
+    /** (6) Reviewer summary/suggestions/DERIVATION (prompt+data evidence, no format talk) */
+    let summary: string | undefined
+    let suggestions: string[] | undefined
+    let derivation:
+      | { from_prompt: string[]; from_data: string[]; join_logic: string[] }
+      | undefined
+
+    try {
+      const joinHintsOnly = contextSnips
+        .filter(s => s.payload?.kind === 'column' && s.payload?.isForeignKey)
+        .map(s => {
+          const ref = s.payload?.references || {}
+          if (s.payload?.table && s.payload?.column && ref?.table && ref?.column) {
+            return `${s.payload.table}.${s.payload.column} = ${ref.table}.${ref.column}`
+          }
+          return null
+        })
+        .filter(Boolean) as string[]
+
+      const usedBrief = contextSnips.slice(0, 16).map(s => {
+        const key = `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`
+        return `- ${key}: ${s.text?.split('\n').slice(0,2).join(' ')}`
+      }).join('\n')
+
+      const review = await openai.chat.completions.create({
+        model: chatModel,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: REVIEW_SYSTEM_PROMPT },
+          { role: 'user', content:
+`User question:
 ${question}
 
-Selected schema elements (FKs prefixed) with similarity score if any:
-${contextSnips.map(s => 
-  `- ${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}${s.payload?.isForeignKey ? ' [FK]' : ''}${s.score ? ` (${s.score.toFixed(3)})` : ''}: ${s.text.replace(/\n/g, ' ')}`
-).join('\n')}
+Initial SQL (plain-table):
+${sql_initial}
 
-Generated SQL:
-${executableSQL}
+Final SQL (JSON-graph):
+${sql_final}
 
-Now explain:
-1. Why each table and column was selected (especially join keys).
-2. Why the SQL was structured as it is (joins, filters, projections).
-3. Suggestions to improve schema descriptions or the prompt.
+Foreign-key hints detected:
+${joinHintsOnly.length ? joinHintsOnly.map(h => `- ${h}`).join('\n') : '(none)'}
 
-Return a short JSON object with keys: reasoning, sql_rationale, suggestions.`
-    
-    const analysis = await openai.chat.completions.create({
-      model: chatModel,
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: 'You are an analytical assistant for RAG-based SQL generation.' },
-        { role: 'user', content: explainPrompt }
-      ],
-      response_format: { type: 'json_object' },
-    })
-    
-    let parsed: any = {}
-    try {
-      parsed = JSON.parse(analysis.choices[0].message.content || '{}')
-    } catch {
-      parsed = {}
-    }
-    
-    const reasoning = parsed.reasoning || ''
-    const sqlRationale = parsed.sql_rationale || ''
-    const suggestions = parsed.suggestions || ''
-    
-    // 7) Generate summary
-    let summary = ''
-    try {
-      const preview = result.slice(0, 20)
-      const jsonPreview = JSON.stringify(preview, null, 2)
-      
-      const summaryPrompt = `You are a data analyst. Summarize the query result in concise English. Mention key patterns, trends, or anomalies.
+Column hints:
+${columnHints}
 
-SQL:
-${executableSQL}
-
-Result (first 20 rows):
-${jsonPreview}`
-      
-      const summaryResp = await openai.chat.completions.create({
-        model: chatModel,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: 'You are a concise data summarizer.' },
-          { role: 'user', content: summaryPrompt }
-        ],
+Context (RAG snippets):
+${usedBrief}
+` }
+        ] as any,
       })
-      
-      summary = summaryResp.choices[0].message.content?.trim() || ''
-    } catch (error) {
-      console.error('Error generating summary:', error)
-    }
-    
-    // Save assistant response
-    if (sessionId) {
-      await saveChatMessage(sessionId, 'assistant', 
-        '', // Empty content since we'll render with accordions
-        {
-          sql,
-          executableSQL,
-          resultCount: result.length,
-          columns,
-          result: result.slice(0, 20), // Limit to first 20 rows
-          used: contextSnips.map(s => ({
-            key: `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`,
-            score: s.score,
-            kind: s.payload?.kind,
-            table: s.payload?.table,
-            isForeignKey: s.payload?.isForeignKey || false,
-            isPrimaryKey: s.payload?.isPrimaryKey || false,
-            description: s.text,
-          })),
-          summary,
-          reasoning,
-          sql_rationale: sqlRationale,
-          suggestions,
-          simulated: false
-        }
-      )
-    }
-    
-    const response = {
+      const blob = review.choices?.[0]?.message?.content?.trim() || '{}'
+      const parsed = safeJsonParse<{
+        summary: string
+        suggestions: string[]
+        derivation: { from_prompt: string[]; from_data: string[]; join_logic: string[] }
+      }>(blob)
+
+      summary = parsed?.summary
+      suggestions = parsed?.suggestions
+      derivation = parsed?.derivation
+    } catch {}
+
+    /** (7) Response */
+    return NextResponse.json({
       ok: true,
-      sql,
-      executableSQL,
+      sql_initial,   // plain-table RAG SQL
+      sql_final,     // JSONB graph SQL (no *, correct names, aliased collisions)
+      executed,
+      error: execError,
+      rows,
       used: contextSnips.map(s => ({
         key: `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`,
         score: s.score,
         kind: s.payload?.kind,
         table: s.payload?.table,
-        isForeignKey: s.payload?.isForeignKey || false,
+        isForeignKey: !!s.payload?.isForeignKey,
         description: s.text,
       })),
-      resultCount: result.length,
-      columns,
-      result,
-      reasoning,
-      sql_rationale: sqlRationale,
-      suggestions,
-      summary,
-      simulated: false, // Using real database execution
-    }
-    
-    return NextResponse.json(response)
-    
+      summary,        // focuses on prompt + data
+      suggestions,    // actionable improvements based on prompt & data
+      derivation,     // WHY: evidence from prompt & data (tables/columns & join logic)
+    })
   } catch (error: any) {
     console.error('AI Ask error:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: error?.message || 'Internal server error' },
       { status: 500 }
     )
   }

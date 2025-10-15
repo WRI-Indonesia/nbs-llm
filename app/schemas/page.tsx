@@ -9,106 +9,10 @@ import { Plus, Database, Calendar, Trash2, Play, FileText, Sparkles, Globe, User
 import { toast } from 'sonner'
 import Link from 'next/link'
 import Header from "@/components/Header"
+import { dummySchema } from '@/lib/dummy-schema'
 
 // Sample data for new schemas
-const SAMPLE_SCHEMA_DATA = {
-  nodes: [
-    {
-      id: 'table-1',
-      type: 'table',
-      position: { x: 100, y: 100 },
-      data: {
-        table: 'users',
-        description: 'User accounts and profiles',
-        columns: [
-          { name: 'id', type: 'number', isPrimaryKey: true, description: 'Unique user identifier' },
-          { name: 'username', type: 'text', description: 'User login name' },
-          { name: 'email', type: 'text', description: 'User email address' },
-          { name: 'created_at', type: 'text', description: 'Account creation timestamp' },
-        ],
-        data: [
-          { id: 1, username: 'john_doe', email: 'john@example.com', created_at: '2024-01-15' },
-          { id: 2, username: 'jane_smith', email: 'jane@example.com', created_at: '2024-01-16' },
-          { id: 3, username: 'bob_wilson', email: 'bob@example.com', created_at: '2024-01-17' },
-          { id: 4, username: 'alice_brown', email: 'alice@example.com', created_at: '2024-01-18' },
-          { id: 5, username: 'charlie_davis', email: 'charlie@example.com', created_at: '2024-01-19' },
-        ],
-      },
-    },
-    {
-      id: 'table-2',
-      type: 'table',
-      position: { x: 500, y: 100 },
-      data: {
-        table: 'posts',
-        description: 'Blog posts and articles',
-        columns: [
-          { name: 'id', type: 'number', isPrimaryKey: true, description: 'Unique post identifier' },
-          { name: 'title', type: 'text', description: 'Post title' },
-          { name: 'content', type: 'text', description: 'Post content' },
-          { name: 'user_id', type: 'number', isForeignKey: true, references: { table: 'users', column: 'id' }, description: 'Author user ID' },
-          { name: 'published', type: 'boolean', description: 'Publication status' },
-        ],
-        data: [
-          { id: 1, title: 'Getting Started with React', content: 'Learn the basics of React development...', user_id: 1, published: true },
-          { id: 2, title: 'Advanced SQL Techniques', content: 'Master complex SQL queries and optimization...', user_id: 2, published: true },
-          { id: 3, title: 'Draft: Future of AI', content: 'Exploring the potential of artificial intelligence...', user_id: 3, published: false },
-          { id: 4, title: 'Database Design Best Practices', content: 'Essential principles for designing robust databases...', user_id: 1, published: true },
-          { id: 5, title: 'Draft: Web Security Guide', content: 'Comprehensive guide to web application security...', user_id: 4, published: false },
-        ],
-      },
-    },
-    {
-      id: 'table-3',
-      type: 'table',
-      position: { x: 900, y: 100 },
-      data: {
-        table: 'comments',
-        description: 'User comments on posts',
-        columns: [
-          { name: 'id', type: 'number', isPrimaryKey: true, description: 'Unique comment identifier' },
-          { name: 'post_id', type: 'number', isForeignKey: true, references: { table: 'posts', column: 'id' }, description: 'Related post ID' },
-          { name: 'user_id', type: 'number', isForeignKey: true, references: { table: 'users', column: 'id' }, description: 'Commenter user ID' },
-          { name: 'text', type: 'text', description: 'Comment text' },
-          { name: 'created_at', type: 'text', description: 'Comment timestamp' },
-        ],
-        data: [
-          { id: 1, post_id: 1, user_id: 2, text: 'Great tutorial! Very helpful.', created_at: '2024-01-20' },
-          { id: 2, post_id: 1, user_id: 3, text: 'Thanks for sharing this.', created_at: '2024-01-21' },
-          { id: 3, post_id: 2, user_id: 1, text: 'Excellent SQL examples.', created_at: '2024-01-22' },
-          { id: 4, post_id: 4, user_id: 5, text: 'Very informative post.', created_at: '2024-01-23' },
-          { id: 5, post_id: 2, user_id: 4, text: 'Learned a lot from this.', created_at: '2024-01-24' },
-        ],
-      },
-    },
-  ],
-  edges: [
-    {
-      id: 'table-2.user_id-->table-1.id',
-      source: 'table-2',
-      target: 'table-1',
-      sourceHandle: 'posts__user_id__out',
-      targetHandle: 'users__id__in',
-      type: 'smoothstep'
-    },
-    {
-      id: 'table-3.post_id-->table-2.id',
-      source: 'table-3',
-      target: 'table-2',
-      sourceHandle: 'comments__post_id__out',
-      targetHandle: 'posts__id__in',
-      type: 'smoothstep'
-    },
-    {
-      id: 'table-3.user_id-->table-1.id',
-      source: 'table-3',
-      target: 'table-1',
-      sourceHandle: 'comments__user_id__out',
-      targetHandle: 'users__id__in',
-      type: 'smoothstep'
-    }
-  ]
-}
+const SAMPLE_SCHEMA_DATA = dummySchema
 
 interface Schema {
   id: string
@@ -531,7 +435,7 @@ export default function SchemaSelectionPage() {
                     <div className="flex flex-col items-center gap-2">
                       <Sparkles className="w-5 h-5" />
                       <span className="text-sm font-medium">Sample Schema</span>
-                      <span className="text-xs text-gray-500">Users, Posts, Comments</span>
+                      <span className="text-xs text-gray-500">Administrative, People, Nature</span>
                     </div>
                   </button>
                 </div>

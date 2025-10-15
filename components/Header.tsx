@@ -37,7 +37,7 @@ export default function Header() {
           <div className="p-2 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg shadow-sm">
             <Database className="h-6 w-6 text-white" />
           </div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Flow Schema Designer</h1>
+          <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">Flow</h1>
         </div>
         <nav className="flex gap-2 items-center">
           <Link href="/">

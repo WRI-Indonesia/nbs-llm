@@ -222,7 +222,7 @@ export default function SidebarChat({
                 body: JSON.stringify({
                     question: q,
                     topK: 8,
-                    minScore: 0.2,
+                    minScore: 0.1, // Lower threshold for better matching
                     chatModel: 'gpt-4o-mini',
                     useGraphJson: true,
                     schemaId: currentSchemaId,

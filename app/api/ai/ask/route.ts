@@ -86,10 +86,11 @@ Rules:
 
 /** Reviewer prompt that focuses on PROMPT & DATA (not SQL/JSON formats) */
 const REVIEW_SYSTEM_PROMPT = `
-You are a concise reviewer.
+You are a concise reviewer that analyzes query results based on actual data.
 
 Your job:
-- Summarize what the result set gives in terms of the user's question (focus on entities/fields from the prompt).
+- Summarize what the ACTUAL QUERY RESULTS show in terms of the user's question (focus on the data returned, not just the SQL).
+- Base your summary on the actual data retrieved from the database, including specific values, counts, and patterns.
 - Offer short, practical suggestions to better satisfy the prompt using available data (filters, fields, grouping), not formatting advice.
 - Explain WHY this SQL is justified by (1) signals in the user prompt and (2) evidence from the available schema/data,
   including key join reasons from FK hints.
@@ -97,8 +98,8 @@ Your job:
 Return STRICT JSON with this shape:
 
 {
-  "summary": "1–3 sentences about the returned data, referencing user-intent and fields.",
-  "suggestions": ["concise, actionable changes based on prompt & data (e.g., add filter by published=true)", "..."],
+  "summary": "1–3 sentences about the ACTUAL DATA returned, referencing specific values, counts, or patterns from the results.",
+  "suggestions": ["concise, actionable changes based on prompt & actual data (e.g., add filter by published=true)", "..."],
   "derivation": {
     "from_prompt": ["which entities/fields/constraints the prompt implies", "..."],
     "from_data": ["which tables/columns exist and match the prompt terms", "..."],
@@ -106,6 +107,7 @@ Return STRICT JSON with this shape:
   }
 }
 
+IMPORTANT: Focus on the actual query results data, not just the SQL structure. Mention specific values, counts, or patterns from the returned data.
 DO NOT talk about SQL/JSON formatting or engine details.
 DO NOT include backticks or extra text.`
 
@@ -349,6 +351,26 @@ export async function POST(request: NextRequest) {
       topSnips = filtered.map(s => ({ text: s.doc.text, payload: s.doc.payload, score: s.score }))
     }
 
+    // If still no snippets found, try with progressively lower thresholds
+    if (topSnips.length === 0) {
+      const thresholds = [0.1, 0.05, 0.01]
+      for (const threshold of thresholds) {
+        const sims = ragDocs.map(doc => ({
+          doc,
+          score: calculateTextSimilarity(question, doc.text),
+        }))
+        const filtered = sims
+          .filter(s => s.score >= threshold)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, topK)
+        topSnips = filtered.map(s => ({ text: s.doc.text, payload: s.doc.payload, score: s.score }))
+        if (topSnips.length > 0) {
+          console.log(`Found ${topSnips.length} snippets with threshold ${threshold}`)
+          break
+        }
+      }
+    }
+
     if (topSnips.length === 0) {
       return NextResponse.json({ error: 'No sufficiently similar schema snippets found.' }, { status: 422 })
     }
@@ -499,6 +521,25 @@ ${sql_initial}
         return `- ${key}: ${s.text?.split('\n').slice(0,2).join(' ')}`
       }).join('\n')
 
+      // Prepare data summary for review
+      let dataSummary = 'No data retrieved (query not executed or failed)'
+      if (rows && rows.length > 0) {
+        const sampleRows = rows.slice(0, 5) // Show first 5 rows
+        const totalRows = rows.length
+        const columns = Object.keys(sampleRows[0] as any)
+        
+        dataSummary = `Query returned ${totalRows} rows with columns: ${columns.join(', ')}
+        
+Sample data (first ${Math.min(5, totalRows)} rows):
+${sampleRows.map((row, i) => `${i + 1}. ${JSON.stringify(row)}`).join('\n')}
+
+${totalRows > 5 ? `... and ${totalRows - 5} more rows` : ''}`
+      } else if (executed && rows && rows.length === 0) {
+        dataSummary = 'Query executed successfully but returned no results'
+      } else if (execError) {
+        dataSummary = `Query execution failed: ${execError}`
+      }
+
       const review = await openai.chat.completions.create({
         model: chatModel,
         temperature: 0.2,
@@ -513,6 +554,9 @@ ${sql_initial}
 
 Final SQL (JSON-graph):
 ${sql_final}
+
+Query Results:
+${dataSummary}
 
 Foreign-key hints detected:
 ${joinHintsOnly.length ? joinHintsOnly.map(h => `- ${h}`).join('\n') : '(none)'}

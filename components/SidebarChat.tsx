@@ -123,9 +123,9 @@ export default function SidebarChat({
         const initializeChat = async () => {
             try {
                 // Use passed sessionId or create one
-                const currentSessionId = sessionId || localStorage.getItem('ai-chat-sessionId') || crypto.randomUUID()
+                const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId') || crypto.randomUUID()
                 if (!sessionId) {
-                    localStorage.setItem('ai-chat-sessionId', currentSessionId)
+                    localStorage.setItem('etl-ai-sessionId', currentSessionId)
                 }
 
                 // Check if schema is indexed
@@ -184,7 +184,7 @@ export default function SidebarChat({
 
         try {
             // Get current session ID
-            const currentSessionId = sessionId || localStorage.getItem('ai-chat-sessionId')
+            const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
             
             if (!isIndexed) {
                 setIsIndexing(true)
@@ -261,7 +261,7 @@ export default function SidebarChat({
 
     const clearChat = async () => {
         try {
-            const currentSessionId = sessionId || localStorage.getItem('ai-chat-sessionId')
+            const currentSessionId = sessionId || localStorage.getItem('etl-ai-sessionId')
             if (currentSessionId) {
                 await fetch(`/api/ai/chat?sessionId=${currentSessionId}`, {
                     method: 'DELETE'
@@ -703,7 +703,7 @@ export default function SidebarChat({
                             {(isSending || isIndexing) ? (
                                 <Spinner size={14} />
                             ) : (
-                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="h-4 w-4 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                 </svg>
                             )}

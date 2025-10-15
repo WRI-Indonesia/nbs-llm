@@ -6,7 +6,6 @@ const protectedRoutes = [
   '/schemas',
   '/profile',
   '/blogs',
-  '/api/schemas',
   '/api/user',
   '/api/organizations',
   '/api/blogs'
@@ -18,13 +17,19 @@ const publicRoutes = [
   '/docs',
   '/playground',
   '/api/auth',
-  '/auth'
+  '/auth',
+  '/api/schemas' // Allow schema access for playground
 ]
 
 // Blog routes that should be public (viewing public blogs)
 const publicBlogRoutes = [
   '/api/blogs$', // GET /api/blogs (list public blogs)
   '/api/blogs/[^/]+$' // GET /api/blogs/[slug] (view specific blog)
+]
+
+// Schema routes that should be public for GET requests (playground access)
+const publicSchemaRoutes = [
+  '/api/schemas$' // GET /api/schemas (list schemas for session)
 ]
 
 export async function middleware(request: NextRequest) {
@@ -42,6 +47,16 @@ export async function middleware(request: NextRequest) {
   })
 
   if (isPublicBlogRoute) {
+    return NextResponse.next()
+  }
+
+  // Check if it's a public schema route (GET requests for playground)
+  const isPublicSchemaRoute = publicSchemaRoutes.some(route => {
+    const regex = new RegExp(route.replace(/\[.*?\]/g, '[^/]+'))
+    return regex.test(pathname) && request.method === 'GET'
+  })
+
+  if (isPublicSchemaRoute) {
     return NextResponse.next()
   }
 

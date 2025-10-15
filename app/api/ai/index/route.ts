@@ -97,17 +97,15 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Find the schema
+    // Find the schema directly from database
     let schema: any = null
     
     if (schemaId) {
       // Get specific schema by ID
       try {
-        const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/schemas/${schemaId}`)
-        if (response.ok) {
-          const data = await response.json()
-          schema = data.schema
-        }
+        schema = await prisma.schema.findUnique({
+          where: { id: schemaId }
+        })
       } catch (error) {
         console.error('Error fetching schema by ID:', error)
       }
@@ -116,11 +114,10 @@ export async function POST(request: NextRequest) {
     if (!schema && sessionId) {
       // Get schema by session ID
       try {
-        const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/schemas?sessionId=${sessionId}`)
-        if (response.ok) {
-          const data = await response.json()
-          schema = data.schemas?.find((s: any) => s.name === 'default')
-        }
+        const schemas = await prisma.schema.findMany({
+          where: { sessionId: sessionId }
+        })
+        schema = schemas.find((s: any) => s.name.startsWith('playground-'))
       } catch (error) {
         console.error('Error fetching schema by session ID:', error)
       }

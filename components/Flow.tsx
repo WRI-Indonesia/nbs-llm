@@ -294,7 +294,7 @@ export default function Flow() {
                 const response = await fetch(`/api/schemas?sessionId=${currentSessionId}`)
                 if (response.ok) {
                     const { schemas } = await response.json()
-                    const defaultSchema = schemas.find((s: any) => s.name === 'default')
+                    const defaultSchema = schemas.find((s: any) => s.name.startsWith('playground-'))
                     if (defaultSchema) {
                         // Fetch all versions for this schema
                         const versionsResponse = await fetch(`/api/schemas/${defaultSchema.id}`)
@@ -405,9 +405,9 @@ export default function Flow() {
                         const { schema } = await response.json()
                         defaultSchema = schema
                     } else {
-                        // For guest users, find the default schema
+                        // For guest users, find the playground schema
                         const { schemas } = await response.json()
-                        defaultSchema = schemas.find((s: any) => s.name === 'default')
+                        defaultSchema = schemas.find((s: any) => s.name.startsWith('playground-'))
                     }
                     
                     if (defaultSchema) {
@@ -477,8 +477,8 @@ export default function Flow() {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            sessionId: currentSessionId,
-                            versionId,
+                            name: `playground-${uuidv4()}`,
+                            description: 'Sample schema for playground',
                             graphJson: dataToSave
                         })
                     })
@@ -571,8 +571,8 @@ export default function Flow() {
                     method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        sessionId: currentSessionId,
-                        versionId,
+                        name: `playground-${uuidv4()}`,
+                        description: 'Flow schema design',
                         graphJson: dataToSave
                     })
                 })
@@ -1087,7 +1087,7 @@ export default function Flow() {
             }
 
             const { schemas } = await response.json()
-            const defaultSchema = schemas.find((s: any) => s.name === 'default')
+            const defaultSchema = schemas.find((s: any) => s.name.startsWith('playground-'))
             if (!defaultSchema) {
                 throw new Error('Schema not found')
             }

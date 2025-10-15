@@ -137,8 +137,8 @@ export async function saveToDatabase(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      sessionId,
-      versionId: versionId || `v_${Date.now()}`,
+      name: `playground-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      description: 'Flow schema design',
       graphJson: schemaData,
     }),
   })

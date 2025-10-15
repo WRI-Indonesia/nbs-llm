@@ -26,6 +26,7 @@ interface AskBody {
   minScore?: number
   chatModel?: string
   sessionId?: string
+  schemaId?: string
 }
 
 // Simple text similarity function (fallback when pgvector is not available)
@@ -94,7 +95,22 @@ async function fetchRagDocs() {
   }
 }
 
-// Get current schema data for simulation
+// Get schema by ID
+async function getSchemaById(schemaId: string) {
+  try {
+    const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/schemas/${schemaId}`)
+    if (response.ok) {
+      const data = await response.json()
+      return data.schema
+    }
+    return null
+  } catch (error) {
+    console.error('Error fetching schema by ID:', error)
+    return null
+  }
+}
+
+// Get current schema data for simulation (fallback)
 async function getCurrentSchema(sessionId?: string) {
   try {
     if (!sessionId) return null
@@ -111,319 +127,196 @@ async function getCurrentSchema(sessionId?: string) {
   }
 }
 
-// Execute SQL on real data from schema nodes
-function executeSQLOnRealData(sql: string, schemaData: any): { result: any[], columns: string[] } {
+// Execute SQL query directly against the database using Prisma
+async function executeSQLQuery(sql: string): Promise<{ result: any[], columns: string[], error?: string }> {
   try {
-    // Extract table names from SQL (including JOINs)
+    console.log('Executing SQL:', sql)
+    
+    // Use Prisma's raw query functionality
+    const result = await prisma.$queryRawUnsafe(sql)
+    
+    // Convert result to array format
+    const resultArray = Array.isArray(result) ? result : [result]
+    
+    // Extract column names from the first row if available
+    let columns: string[] = []
+    if (resultArray.length > 0 && typeof resultArray[0] === 'object') {
+      columns = Object.keys(resultArray[0])
+    }
+    
+    return {
+      result: resultArray,
+      columns
+    }
+  } catch (error: any) {
+    console.error('SQL execution error:', error)
+    return {
+      result: [],
+      columns: [],
+      error: error.message
+    }
+  }
+}
+
+// Get list of actual tables in the database
+async function getActualTables(): Promise<string[]> {
+  try {
+    const result = await prisma.$queryRawUnsafe(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+    `) as any[]
+    
+    return result.map(row => row.table_name)
+  } catch (error) {
+    console.error('Error getting actual tables:', error)
+    return []
+  }
+}
+
+// Convert OpenAI generated SQL to query schema data using OpenAI with retry loop
+async function convertToSchemaDataQuery(sql: string, schemaData: any, schemaId: string): Promise<string> {
+  try {
+    if (!schemaData?.graphJson?.nodes) {
+      return sql // Return original SQL if no schema data
+    }
+
+    // Extract table names from SQL
     const tableMatches = sql.match(/\b(?:FROM|JOIN)\s+(\w+)/gi) || []
     const tables = tableMatches.map(match => match.replace(/(?:FROM|JOIN)\s+/i, '').toLowerCase())
-    
-    if (tables.length === 0) {
-      return { result: [], columns: [] }
-    }
-    
-    // Find matching tables in schema
-    const schemaTables = schemaData?.graphJson?.nodes?.filter((node: any) => 
-      node.type === 'table' && tables.includes(node.data.table.toLowerCase())
-    ) || []
-    
-    if (schemaTables.length === 0) {
-      return { result: [], columns: [] }
-    }
-    
-    // Get real data from each table
-    const tableData: { [key: string]: any[] } = {}
-    const tableColumns: { [key: string]: string[] } = {}
-    
-    for (const tableNode of schemaTables) {
-      const tableName = tableNode.data.table.toLowerCase()
-      tableData[tableName] = tableNode.data.data || [] // Use real data from node
-      tableColumns[tableName] = tableNode.data.columns.map((col: any) => col.name)
-    }
-    
-    // Handle JOIN operations
-    if (sql.toLowerCase().includes('join')) {
-      return executeJoinQuery(sql, tableData, tableColumns)
-    }
-    
-    // Simple SQL execution based on query type
-    if (sql.toLowerCase().includes('select')) {
-      // For SELECT queries, return real data
-      const firstTable = tables[0]
-      let data = tableData[firstTable] || []
-      const columns = tableColumns[firstTable] || []
-      
-      // Apply simple WHERE conditions if present
-      const whereMatch = sql.match(/WHERE\s+(.+)/i)
-      if (whereMatch) {
-        const whereClause = whereMatch[1].toLowerCase()
-        // Simple filtering based on common patterns
-        if (whereClause.includes('id =')) {
-          const idMatch = whereClause.match(/id\s*=\s*(\d+)/)
-          if (idMatch) {
-            const targetId = parseInt(idMatch[1])
-            data = data.filter(row => row.id === targetId)
-          }
-        }
-      }
-      
-      // Apply LIMIT if present
-      const limitMatch = sql.match(/LIMIT\s+(\d+)/i)
-      if (limitMatch) {
-        const limit = parseInt(limitMatch[1])
-        data = data.slice(0, limit)
-      }
-      
-      return { result: data, columns }
-    }
-    
-    // For other query types, return empty result
-    return { result: [], columns: [] }
-    
-  } catch (error) {
-    console.error('Error executing SQL on real data:', error)
-    return { result: [], columns: [] }
-  }
-}
 
-function executeJoinQuery(sql: string, tableData: { [key: string]: any[] }, tableColumns: { [key: string]: string[] }): { result: any[], columns: string[] } {
-  try {
-    // Extract JOIN information
-    const joinMatch = sql.match(/(\w+)\s+(?:LEFT\s+)?JOIN\s+(\w+)\s+ON\s+([^;]+)/i)
-    if (!joinMatch) {
-      return { result: [], columns: [] }
+    console.log('Extracted tables from SQL:', tables)
+    console.log('Schema nodes:', schemaData.graphJson.nodes.map((n: any) => ({ type: n.type, table: n.data?.table })))
+
+    if (tables.length === 0) {
+      console.log('No tables found in SQL, returning original')
+      return sql // No tables found in SQL
     }
-    
-    const [, leftTable, rightTable, joinCondition] = joinMatch
-    const leftTableName = leftTable.toLowerCase()
-    const rightTableName = rightTable.toLowerCase()
-    
-    const leftData = tableData[leftTableName] || []
-    const rightData = tableData[rightTableName] || []
-    
-    // Parse join condition (e.g., "posts.user_id = users.id")
-    const joinConditionMatch = joinCondition.match(/(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)/i)
-    if (!joinConditionMatch) {
-      return { result: [], columns: [] }
+
+    // Find matching table nodes in the schema
+    const matchingNodes = schemaData.graphJson.nodes.filter((node: any) => 
+      node.type === 'table' && tables.includes(node.data.table.toLowerCase())
+    )
+
+    console.log('Matching nodes found:', matchingNodes.length)
+
+    if (matchingNodes.length === 0) {
+      console.log('No matching tables found in schema, returning original')
+      return sql // No matching tables found
     }
-    
-    const [, leftTableAlias, leftColumn, rightTableAlias, rightColumn] = joinConditionMatch
-    
-    // The FROM table is always the left table, JOIN table is always the right table
-    const actualLeftTable = leftTableName
-    const actualRightTable = rightTableName
-    const actualLeftData = leftData
-    const actualRightData = rightData
-    
-    // Determine which column to use for joining based on the condition
-    let actualLeftColumn: string
-    let actualRightColumn: string
-    
-    if (leftTableAlias.toLowerCase() === leftTableName) {
-      actualLeftColumn = leftColumn
-      actualRightColumn = rightColumn
-    } else {
-      actualLeftColumn = rightColumn
-      actualRightColumn = leftColumn
-    }
-    
-    // Perform the JOIN
-    const joinedResults: any[] = []
-    
-    for (const leftRow of actualLeftData) {
-      const leftValue = leftRow[actualLeftColumn]
+
+    // Get the first matching table for context
+    const firstNode = matchingNodes[0]
+    const tableName = firstNode.data.table.toLowerCase()
+    const tableData = firstNode.data.data
+
+    // Check if this table has actual data stored in the schema
+    if (tableData && Array.isArray(tableData) && tableData.length > 0) {
+      const firstRow = tableData[0]
       
-      // Find matching rows in right table
-      const matchingRightRows = actualRightData.filter(rightRow => 
-        rightRow[actualRightColumn] === leftValue
-      )
-      
-      if (matchingRightRows.length > 0) {
-        // Create joined rows with proper column prefixes
-        for (const rightRow of matchingRightRows) {
-          const joinedRow: any = {}
+      // Check if this looks like a data structure
+      if (typeof firstRow === 'object' && firstRow !== null) {
+        
+        // Retry loop to get correct SQL conversion
+        let attempts = 0
+        const maxAttempts = 3
+        let lastError = ''
+        let basePrompt = `You are a PostgreSQL expert specializing in JSONB queries.
+
+TASK: Convert the following SQL query to work with schema data stored in JSONB format.
+
+ORIGINAL SQL:
+${sql}
+
+SCHEMA STRUCTURE:
+- Schema ID: ${schemaId}
+- Table Name: ${tableName}
+- Data is stored in: schemas.graphJson.nodes[].data.data[]
+- Sample data structure: ${JSON.stringify(firstRow, null, 2)}
+
+REQUIREMENTS:
+1. Convert the query to use the schemas table with JSONB operations
+2. Use CROSS JOIN LATERAL with jsonb_array_elements to extract data
+3. Filter by schema ID and table name
+4. Handle all column references with proper JSONB field access (rec->>'column_name')
+5. Cast numeric fields appropriately (::numeric for numbers)
+6. Handle subqueries by converting them to use the same schema structure
+7. Remove table aliases from column references
+8. Maintain all original logic (WHERE, ORDER BY, LIMIT, etc.)
+9. For subqueries, use different aliases (s2, node2, rec2) to avoid conflicts
+10. Ensure all WHERE clauses in subqueries use proper table prefixes (s2.id, not just id)
+
+CRITICAL RULES:
+- Subqueries must use s2.id = '${schemaId}' not just id = '${schemaId}'
+- Column names in subqueries should be simple (e.g., 'density' not 'AVG(density)')
+- Avoid nested function calls in JSONB field access
+- Each subquery should be self-contained with proper FROM and WHERE clauses
+
+OUTPUT FORMAT:
+Return ONLY the converted SQL query, no explanations or markdown formatting.
+
+EXAMPLE CONVERSION:
+Original: SELECT p.district_name, p.population FROM people p WHERE p.density > (SELECT AVG(density) FROM people)
+Converted: SELECT rec->>'district_name' AS district_name, (rec->>'population')::numeric AS population FROM schemas s CROSS JOIN LATERAL jsonb_array_elements(s."graphJson"->'nodes') AS node CROSS JOIN LATERAL jsonb_array_elements(node->'data'->'data') AS rec WHERE s.id = '${schemaId}' AND node->'data'->>'table' = '${tableName}' AND (rec->>'density')::numeric > (SELECT AVG((rec2->>'density')::numeric) FROM schemas s2 CROSS JOIN LATERAL jsonb_array_elements(s2."graphJson"->'nodes') AS node2 CROSS JOIN LATERAL jsonb_array_elements(node2->'data'->'data') AS rec2 WHERE s2.id = '${schemaId}' AND node2->'data'->>'table' = '${tableName}')`
+        
+        while (attempts < maxAttempts) {
+          attempts++
+          console.log(`SQL conversion attempt ${attempts}/${maxAttempts}`)
           
-          // Add left table columns with prefix
-          for (const col of tableColumns[actualLeftTable] || []) {
-            joinedRow[`${actualLeftTable}.${col}`] = leftRow[col]
-            // Also add without prefix for backward compatibility
-            joinedRow[col] = leftRow[col]
-          }
-          
-          // Add right table columns with prefix
-          for (const col of tableColumns[actualRightTable] || []) {
-            joinedRow[`${actualRightTable}.${col}`] = rightRow[col]
-            // Only add without prefix if it doesn't conflict
-            if (!joinedRow[col]) {
-              joinedRow[col] = rightRow[col]
+          try {
+            // Use OpenAI to convert the SQL to JSONB query
+            let conversionPrompt = basePrompt
+
+            const conversionResponse = await openai.chat.completions.create({
+              model: CHAT_MODEL_DEFAULT,
+              temperature: 0.1,
+              messages: [
+                { role: 'system', content: 'You are a PostgreSQL JSONB expert. Convert SQL queries to work with JSONB schema data. Be precise and avoid nested function calls.' },
+                { role: 'user', content: conversionPrompt }
+              ],
+            })
+
+            const convertedSQL = conversionResponse.choices[0].message.content?.trim() || sql
+            console.log(`Attempt ${attempts} - OpenAI converted SQL:`, convertedSQL)
+            
+            // Test the SQL by trying to execute it
+            const testResult = await executeSQLQuery(convertedSQL)
+            
+            if (!testResult.error) {
+              console.log(`✅ SQL conversion successful on attempt ${attempts}`)
+              return convertedSQL
+            } else {
+              lastError = testResult.error
+              console.log(`❌ Attempt ${attempts} failed:`, testResult.error)
+              
+              // If this is not the last attempt, add error context for next attempt
+              if (attempts < maxAttempts) {
+                basePrompt += `\n\nPREVIOUS ATTEMPT FAILED WITH ERROR: ${testResult.error}\nPlease fix the SQL and try again.`
+              }
             }
+            
+          } catch (conversionError: any) {
+            lastError = conversionError.message
+            console.log(`❌ Conversion attempt ${attempts} error:`, conversionError.message)
           }
-          
-          joinedResults.push(joinedRow)
-        }
-      } else if (sql.toLowerCase().includes('left join')) {
-        // For LEFT JOIN, include left row even if no match
-        const joinedRow: any = {}
-        
-        // Add left table columns
-        for (const col of tableColumns[actualLeftTable] || []) {
-          joinedRow[`${actualLeftTable}.${col}`] = leftRow[col]
-          joinedRow[col] = leftRow[col]
         }
         
-        // Add null values for right table columns
-        for (const col of tableColumns[actualRightTable] || []) {
-          joinedRow[`${actualRightTable}.${col}`] = null
-        }
-        
-        joinedResults.push(joinedRow)
+        // If all attempts failed, return original SQL
+        console.log(`❌ All ${maxAttempts} conversion attempts failed. Last error: ${lastError}`)
+        return sql
       }
     }
-    
-    // Extract column names from SELECT clause
-    const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM/i)
-    let columns: string[] = []
-    
-    if (selectMatch) {
-      const selectClause = selectMatch[1].trim()
-      if (selectClause === '*') {
-        // Include all columns from both tables
-        columns = [
-          ...(tableColumns[actualLeftTable] || []),
-          ...(tableColumns[actualRightTable] || [])
-        ]
-      } else {
-        // Parse specific columns
-        const columnList = selectClause.split(',').map(col => col.trim())
-        columns = columnList.map(col => {
-          // Remove table prefix if present (e.g., "users.id" -> "id")
-          const parts = col.split('.')
-          return parts[parts.length - 1]
-        })
-      }
-    }
-    
-    // Apply LIMIT if present
-    const limitMatch = sql.match(/LIMIT\s+(\d+)/i)
-    if (limitMatch) {
-      const limit = parseInt(limitMatch[1])
-      joinedResults.splice(limit)
-    }
-    
-    return { result: joinedResults, columns }
+
+    return sql // Return original SQL if no conversion needed
     
   } catch (error) {
-    console.error('Error executing JOIN query:', error)
-    return { result: [], columns: [] }
+    console.error('Error converting to schema data query:', error)
+    return sql // Return original SQL on error
   }
 }
 
-// Generate sample data for a table based on its columns
-function generateSampleData(tableData: any): any[] {
-  const columns = tableData.columns || []
-  const sampleRows = []
-  
-  // Generate 3-5 sample rows
-  const rowCount = Math.floor(Math.random() * 3) + 3
-  
-  for (let i = 0; i < rowCount; i++) {
-    const row: any = {}
-    
-    columns.forEach((col: any) => {
-      const colName = col.name.toLowerCase()
-      const colType = col.type?.toLowerCase() || 'varchar'
-      
-      if (colName.includes('id')) {
-        row[col.name] = i + 1
-      } else if (colType.includes('int') || colType.includes('number')) {
-        row[col.name] = Math.floor(Math.random() * 1000) + 1
-      } else if (colType.includes('date') || colType.includes('time')) {
-        row[col.name] = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      } else if (colType.includes('bool')) {
-        row[col.name] = Math.random() > 0.5
-      } else {
-        // String/varchar fields
-        const sampleTexts = ['Sample', 'Test', 'Example', 'Demo', 'Data', 'Record', 'Item', 'Entry']
-        row[col.name] = `${sampleTexts[Math.floor(Math.random() * sampleTexts.length)]} ${i + 1}`
-      }
-    })
-    
-    sampleRows.push(row)
-  }
-  
-  return sampleRows
-}
 
-// Simulate SQL execution on schema data
-function simulateSQLExecution(sql: string, schemaData: any): { result: any[], columns: string[] } {
-  try {
-    // Extract table names from SQL (simple regex)
-    const tableMatches = sql.match(/\bFROM\s+(\w+)/gi) || []
-    const tables = tableMatches.map(match => match.replace(/FROM\s+/i, '').toLowerCase())
-    
-    if (tables.length === 0) {
-      return { result: [], columns: [] }
-    }
-    
-    // Find matching tables in schema
-    const schemaTables = schemaData?.graphJson?.nodes?.filter((node: any) => 
-      node.type === 'table' && tables.includes(node.data.table.toLowerCase())
-    ) || []
-    
-    if (schemaTables.length === 0) {
-      return { result: [], columns: [] }
-    }
-    
-    // Generate sample data for each table
-    const tableData: { [key: string]: any[] } = {}
-    const tableColumns: { [key: string]: string[] } = {}
-    
-    for (const tableNode of schemaTables) {
-      const tableName = tableNode.data.table.toLowerCase()
-      tableData[tableName] = generateSampleData(tableNode.data)
-      tableColumns[tableName] = tableNode.data.columns.map((col: any) => col.name)
-    }
-    
-    // Simple simulation based on SQL type
-    if (sql.toLowerCase().includes('select')) {
-      // For SELECT queries, return sample data
-      const firstTable = tables[0]
-      const data = tableData[firstTable] || []
-      const columns = tableColumns[firstTable] || []
-      
-      // Apply simple WHERE conditions if present
-      let filteredData = data
-      const whereMatch = sql.match(/WHERE\s+(.+)/i)
-      if (whereMatch) {
-        const whereClause = whereMatch[1].toLowerCase()
-        // Simple filtering based on common patterns
-        if (whereClause.includes('id =')) {
-          const idMatch = whereClause.match(/id\s*=\s*(\d+)/)
-          if (idMatch) {
-            const targetId = parseInt(idMatch[1])
-            filteredData = data.filter(row => row.id === targetId)
-          }
-        }
-      }
-      
-      // Apply LIMIT if present
-      const limitMatch = sql.match(/LIMIT\s+(\d+)/i)
-      if (limitMatch) {
-        const limit = parseInt(limitMatch[1])
-        filteredData = filteredData.slice(0, limit)
-      }
-      
-      return { result: filteredData, columns }
-    }
-    
-    // For other query types, return empty result
-    return { result: [], columns: [] }
-    
-  } catch (error) {
-    console.error('Error simulating SQL:', error)
-    return { result: [], columns: [] }
-  }
-}
 
 // Build user prompt with context
 function buildUserPrompt(question: string, contextSnips: Array<{text: string, payload: any, score: number}>): string {
@@ -513,7 +406,7 @@ async function getChatHistory(sessionId: string, limit: number = 10) {
 export async function POST(request: NextRequest) {
   try {
     const body: AskBody = await request.json()
-    const { question, topK = 8, minScore = 0.2, chatModel = CHAT_MODEL_DEFAULT, sessionId } = body
+    const { question, topK = 8, minScore = 0.2, chatModel = CHAT_MODEL_DEFAULT, sessionId, schemaId } = body
     
     if (!question || question.trim().length < 3) {
       return NextResponse.json(
@@ -652,12 +545,86 @@ export async function POST(request: NextRequest) {
     const raw = chat.choices[0].message.content || ''
     const sql = extractSql(raw)
     
-    // 5) Simulate SQL execution instead of real execution
-    const schemaData = await getCurrentSchema(sessionId)
-    // Execute SQL on real data from schema nodes
-    const { result, columns } = executeSQLOnRealData(sql, schemaData)
+    // 5) Get schema data and convert SQL to JSONB format
+    let schemaData = null
     
-    // 6) Generate explanation
+    // Try to get schema by ID first, then fallback to sessionId
+    if (schemaId) {
+      schemaData = await getSchemaById(schemaId)
+    }
+    
+    if (!schemaData && sessionId) {
+      schemaData = await getCurrentSchema(sessionId)
+    }
+    
+    // Debug: Log schema structure and actual tables
+    console.log('Schema data:', JSON.stringify(schemaData, null, 2))
+    const actualTables = await getActualTables()
+    console.log('Actual tables in database:', actualTables)
+    console.log('Schema ID:', schemaId)
+    
+    // Convert OpenAI generated SQL to query schema data from schemas table using OpenAI
+    const executableSQL = await convertToSchemaDataQuery(sql, schemaData, schemaId || '')
+    console.log('OpenAI Converted SQL:', executableSQL)
+    
+    // Execute SQL query directly against the database
+    const { result, columns, error: sqlError } = await executeSQLQuery(executableSQL)
+    
+    // If SQL execution failed, try with original SQL as fallback
+    if (sqlError) {
+      console.warn('JSONB SQL failed, trying original SQL:', sqlError)
+      const { result: fallbackResult, columns: fallbackColumns, error: fallbackError } = await executeSQLQuery(sql)
+      
+      if (fallbackError) {
+        console.error('Both SQL queries failed:', fallbackError)
+        return NextResponse.json(
+          { 
+            error: 'SQL execution failed', 
+            details: fallbackError,
+            debug: {
+              originalSQL: sql,
+              convertedSQL: executableSQL,
+              actualTables: actualTables,
+              schemaTables: schemaData?.graphJson?.nodes?.map((n: any) => n.data?.table).filter(Boolean) || []
+            }
+          },
+          { status: 500 }
+        )
+      }
+      
+      // Use fallback results
+      const finalResult = fallbackResult
+      const finalColumns = fallbackColumns
+      const finalSQL = sql
+      
+      // Continue with fallback results...
+      const response = {
+        ok: true,
+        sql: finalSQL,
+        executableSQL: executableSQL,
+        sqlError: sqlError,
+        used: contextSnips.map(s => ({
+          key: `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`,
+          score: s.score,
+          kind: s.payload?.kind,
+          table: s.payload?.table,
+          isForeignKey: s.payload?.isForeignKey || false,
+          description: s.text,
+        })),
+        resultCount: finalResult.length,
+        columns: finalColumns,
+        result: finalResult,
+        reasoning: '',
+        sql_rationale: '',
+        suggestions: '',
+        summary: '',
+        simulated: false,
+      }
+      
+      return NextResponse.json(response)
+    }
+    
+    // 6) Generate explanation and summary using OpenAI
     const explainPrompt = `You are an AI data assistant helping users understand and improve automatically generated SQL.
 
 User question:
@@ -669,7 +636,7 @@ ${contextSnips.map(s =>
 ).join('\n')}
 
 Generated SQL:
-${sql}
+${executableSQL}
 
 Now explain:
 1. Why each table and column was selected (especially join keys).
@@ -708,7 +675,7 @@ Return a short JSON object with keys: reasoning, sql_rationale, suggestions.`
       const summaryPrompt = `You are a data analyst. Summarize the query result in concise English. Mention key patterns, trends, or anomalies.
 
 SQL:
-${sql}
+${executableSQL}
 
 Result (first 20 rows):
 ${jsonPreview}`
@@ -733,6 +700,7 @@ ${jsonPreview}`
         '', // Empty content since we'll render with accordions
         {
           sql,
+          executableSQL,
           resultCount: result.length,
           columns,
           result: result.slice(0, 20), // Limit to first 20 rows
@@ -757,6 +725,7 @@ ${jsonPreview}`
     const response = {
       ok: true,
       sql,
+      executableSQL,
       used: contextSnips.map(s => ({
         key: `${s.payload?.table || '?'}${s.payload?.kind === 'column' ? '.' + s.payload?.column : ''}`,
         score: s.score,
@@ -772,7 +741,7 @@ ${jsonPreview}`
       sql_rationale: sqlRationale,
       suggestions,
       summary,
-      simulated: false, // Using real data from schema nodes
+      simulated: false, // Using real database execution
     }
     
     return NextResponse.json(response)

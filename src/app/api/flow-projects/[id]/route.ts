@@ -91,6 +91,7 @@ export async function PUT(
       data: {
         name: name || existingProject.name,
         description: description !== undefined ? description : existingProject.description,
+        updatedAt: new Date()
       },
     })
 

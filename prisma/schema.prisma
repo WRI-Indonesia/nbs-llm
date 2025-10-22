@@ -45,7 +45,7 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
-  password      String?   // For password-based authentication
+  password      String? // For password-based authentication
   role          UserRole  @default(USER)
   accounts      Account[]
   sessions      Session[]
@@ -60,11 +60,11 @@ model VerificationToken {
 }
 
 model FlowProject {
-  id          String   @id @default(cuid())
-  name        String   @default("Main Project")
-  description String?  @default("Main knowledge flow project")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String     @id @default(cuid())
+  name        String     @default("Main Project")
+  description String?    @default("Main knowledge flow project")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   nodes       FlowNode[]
   edges       FlowEdge[]
 
@@ -75,10 +75,10 @@ model FlowNode {
   id        String      @id @default(cuid())
   projectId String
   project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  nodeId    String      // React Flow node ID
-  type      String      // Node type (e.g., "table")
-  position  Json        // { x: number, y: number }
-  data      Json        // TableNodeData as JSON
+  nodeId    String // React Flow node ID
+  type      String // Node type (e.g., "table")
+  position  Json // { x: number, y: number }
+  data      Json // TableNodeData as JSON
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -87,18 +87,29 @@ model FlowNode {
 }
 
 model FlowEdge {
-  id          String      @id @default(cuid())
-  projectId   String
-  project     FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  edgeId      String      // React Flow edge ID
-  source      String      // Source node ID
-  target      String      // Target node ID
+  id           String      @id @default(cuid())
+  projectId    String
+  project      FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  edgeId       String // React Flow edge ID
+  source       String // Source node ID
+  target       String // Target node ID
   sourceHandle String?
   targetHandle String?
-  type        String?     // Edge type (e.g., "smoothstep")
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  type         String? // Edge type (e.g., "smoothstep")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@unique([projectId, edgeId])
   @@map("flow_edges")
+}
+
+model RagDocs {
+  id        Int      @id @default(autoincrement())
+  text      String
+  payload   Json
+  embedding String?
+  createdAt DateTime @default(now())
+    updatedAt    DateTime    @updatedAt
+
+  @@map("rag_docs")
 }

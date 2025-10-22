@@ -1,19 +1,19 @@
 import { Metadata } from "next";
-import { PlaygroundProvider } from "./_contexts/PlaygroundContext";
+import { KnowledgeProvider } from "./_contexts/KnowledgeContext";
 
 export const metadata: Metadata = {
-    title: "Playground",
+    title: "Knowledge",
     description: "AI experimental of Data Lab Indonesia",
 };
 
-export default function PlaygroundLayout({
+export default function KnowledgeLayout({
     children,
 }: Readonly<{
     children: React.ReactNode;
 }>) {
     return (
-        <PlaygroundProvider>
+        <KnowledgeProvider>
             {children}
-        </PlaygroundProvider>
+        </KnowledgeProvider>
     )
 }

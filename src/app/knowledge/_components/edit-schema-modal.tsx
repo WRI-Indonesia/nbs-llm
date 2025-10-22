@@ -10,9 +10,15 @@ import { Checkbox } from "@radix-ui/react-checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { PencilLine, Database, KeyRound, Link2, Trash2, Plus } from "lucide-react"
 import { TYPE_OPTIONS } from "../data"
+import { useKnowledge } from "../_hooks/useKnowledge"
 
 export function EditSchemaModal({ id, data }: { id: string; data: TableNodeData }) {
     const { table, description, columns, reservedTableNames = [], otherTables = [] } = data
+    const { updateNodeData, nodes } = useKnowledge()
+    
+    // Get the current table name from the context to ensure we have the latest value
+    const currentNode = nodes.find(n => n.id === id)
+    const currentTableName = currentNode?.data?.table || table
 
     const [open, setOpen] = useState(false)
     const [columnsDraft, setColumnsDraft] = useState(columns)
@@ -80,8 +86,8 @@ export function EditSchemaModal({ id, data }: { id: string; data: TableNodeData 
     )
 
     const isDuplicateTableName = useMemo(
-        () => reservedTableNames.filter((n) => normalize(n) !== normalize(table)).some((n) => normalize(n) === normalize(tableDraft)),
-        [reservedTableNames, table, tableDraft, normalize]
+        () => reservedTableNames.filter((n) => normalize(n) !== normalize(currentTableName)).some((n) => normalize(n) === normalize(tableDraft)),
+        [reservedTableNames, currentTableName, tableDraft, normalize]
     )
 
     const hasInvalidTable = useMemo(
@@ -104,13 +110,16 @@ export function EditSchemaModal({ id, data }: { id: string; data: TableNodeData 
     const handleCancel = useCallback(() => setOpen(false), [])
     const handleSave = useCallback(() => {
         if (hasInvalidColumns || hasInvalidTable) return
-        data.onEditColumns?.(id, columnsDraft)
-        if (tableDraft !== table || descriptionDraft !== description) {
-            data.onEditTableMeta?.(id, { table: tableDraft, description: descriptionDraft })
-        }
+        
+        // Update the node data using the context function
+        updateNodeData(id, {
+            columns: columnsDraft,
+            table: tableDraft,
+            description: descriptionDraft,
+        })
+        
         setOpen(false)
-        data.onRefresh?.()
-    }, [columnsDraft, data, description, descriptionDraft, hasInvalidColumns, hasInvalidTable, id, table, tableDraft])
+    }, [columnsDraft, descriptionDraft, hasInvalidColumns, hasInvalidTable, id, tableDraft, updateNodeData])
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>

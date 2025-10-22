@@ -3,13 +3,13 @@
 import { createContext, ReactNode, useState, useCallback, Dispatch, SetStateAction, useEffect, useMemo } from "react"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
-import { useEdgesState, useNodesState, type Node, type Edge } from "@xyflow/react"
+import { useEdgesState, useNodesState, applyNodeChanges, applyEdgeChanges, type Node, type Edge, type NodeChange, type EdgeChange } from "@xyflow/react"
 import type { TableNodeData, Column } from "@/types/table-nodes"
 import { safeId } from "../utils"
 import { type FlowProject, type FlowProjectResponse } from "@/types/flow-project"
 import useSWR from 'swr'
 
-type PlaygroundContextProps = {
+type KnowledgeContextProps = {
     handleDownloadSample: () => void
     nodes: Node<TableNodeData>[]
     setNodes: Dispatch<SetStateAction<Node<TableNodeData>[]>>
@@ -19,9 +19,12 @@ type PlaygroundContextProps = {
     saveProject: () => Promise<void>
     isLoading: boolean
     isDataLoading: boolean
+    handleNodesChange: (changes: NodeChange[]) => void
+    handleEdgesChange: (changes: EdgeChange[]) => void
+    updateNodeData: (nodeId: string, updates: Partial<TableNodeData>) => void
 }
 
-export const PlaygroundContext = createContext<PlaygroundContextProps>({
+export const KnowledgeContext = createContext<KnowledgeContextProps>({
     handleDownloadSample: () => { },
     nodes: [],
     setNodes: () => { },
@@ -31,6 +34,9 @@ export const PlaygroundContext = createContext<PlaygroundContextProps>({
     saveProject: async () => { },
     isLoading: false,
     isDataLoading: false,
+    handleNodesChange: () => { },
+    handleEdgesChange: () => { },
+    updateNodeData: () => { },
 })
 
 // Fetcher function for SWR
@@ -42,7 +48,7 @@ const fetcher = async (url: string): Promise<FlowProjectResponse> => {
     return response.json()
 }
 
-export const PlaygroundProvider = ({ children }: { children: ReactNode }) => {
+export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
     const [nodes, setNodes] = useNodesState<Node<TableNodeData>>([])
     const [edges, setEdges] = useEdgesState<Edge>([])
     const [isLoading, setIsLoading] = useState(false)
@@ -120,6 +126,36 @@ export const PlaygroundProvider = ({ children }: { children: ReactNode }) => {
                 : n
         )
     }, [])
+
+    // ReactFlow change handlers
+    const handleNodesChange = useCallback((changes: NodeChange[]) => {
+        setNodes((nds) => applyNodeChanges(changes, nds) as Node<TableNodeData>[])
+    }, [setNodes])
+
+    const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+        setEdges((eds) => applyEdgeChanges(changes, eds))
+    }, [setEdges])
+
+    // Function to update node data (for edit-schema-modal)
+    const updateNodeData = useCallback((nodeId: string, updates: Partial<TableNodeData>) => {
+        setNodes((nds) => {
+            // Update the specific node
+            const updatedNodes = nds.map((node) => 
+                node.id === nodeId 
+                    ? { ...node, data: { ...node.data, ...updates } }
+                    : node
+            )
+            
+            // Inject node data to update reservedTableNames and otherTables for all nodes
+            const injected = injectNodeData(updatedNodes)
+            
+            // Rebuild edges based on the updated nodes
+            const nextEdges = buildEdgesFromReferences(injected)
+            setEdges(nextEdges)
+            
+            return injected
+        })
+    }, [setNodes, setEdges, injectNodeData, buildEdgesFromReferences])
 
     // Database operations
     const saveProject = useCallback(async () => {
@@ -217,7 +253,7 @@ export const PlaygroundProvider = ({ children }: { children: ReactNode }) => {
         })
     }, [])
 
-    const value = useMemo<PlaygroundContextProps>(
+    const value = useMemo<KnowledgeContextProps>(
         () => ({
             handleDownloadSample,
             nodes,
@@ -228,9 +264,12 @@ export const PlaygroundProvider = ({ children }: { children: ReactNode }) => {
             saveProject,
             isLoading,
             isDataLoading,
+            handleNodesChange,
+            handleEdgesChange,
+            updateNodeData,
         }),
-        [edges, handleDownloadSample, nodes, setEdges, setNodes, currentProject, saveProject, isLoading, isDataLoading]
+        [edges, handleDownloadSample, nodes, setEdges, setNodes, currentProject, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange, updateNodeData]
     )
 
-    return <PlaygroundContext.Provider value={value}>{children}</PlaygroundContext.Provider>
+    return <KnowledgeContext.Provider value={value}>{children}</KnowledgeContext.Provider>
 }

@@ -4741,7 +4741,7 @@ export const SAMPLE_NODES: any = [
                             "isForeignKey": false,
                             "isPrimaryKey": false
                         }
-                    ]
+                    ],
                 }
             ],
             "reservedTableNames": [
@@ -7733,7 +7733,8 @@ export const SAMPLE_NODES: any = [
                     "isForeignKey": false,
                     "isPrimaryKey": false
                 }
-            ]
+            ],
+            "description": "Demographic and socioeconomic indicators for social context and NbS co-benefits.",
         },
         "type": "table",
         "measured": {

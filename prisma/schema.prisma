@@ -81,6 +81,7 @@ model FlowNode {
   data      Json // TableNodeData as JSON
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  ragDocs   RagDocs[]   // RAG documents for this node
 
   @@unique([projectId, nodeId])
   @@map("flow_nodes")
@@ -104,12 +105,13 @@ model FlowEdge {
 }
 
 model RagDocs {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
+  nodeId    String
+  node      FlowNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   text      String
-  payload   Json
   embedding String?
-  createdAt DateTime @default(now())
-    updatedAt    DateTime    @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@map("rag_docs")
 }

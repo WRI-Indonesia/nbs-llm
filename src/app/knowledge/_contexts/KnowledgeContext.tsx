@@ -106,8 +106,7 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
         [findTableNode, pickPrimaryKey]
     )
 
-
-    const injectNodeData = useCallback((arr: Node<TableNodeData>[]) => {
+    const injectNodeData = useCallback((arr: Node<TableNodeData>[], updateNodeDataFn?: (nodeId: string, updates: Partial<TableNodeData>) => void) => {
         const reserved = arr.map((n) => n.data.table)
         return arr.map((n) =>
             n.type === "table"
@@ -119,24 +118,24 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
                         otherTables: arr
                             .filter((m) => m.id !== n.id && m.type === "table")
                             .map((m) => ({ table: m.data.table, columns: m.data.columns })),
-                        onEditTableMeta: n.data.onEditTableMeta,
-                        onAfterImport: n.data.onAfterImport,
+                        onEditTableMeta: updateNodeDataFn ? (nodeId: string, next: { table: string; description?: string }) => {
+                            updateNodeDataFn(nodeId, next)
+                        } : n.data.onEditTableMeta,
+                        onAfterImport: updateNodeDataFn ? (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => {
+                            updateNodeDataFn(nodeId, {
+                                columns: payload.columns,
+                                data: payload.data,
+                                table: payload.metadata.table,
+                                description: payload.metadata.description
+                            })
+                        } : n.data.onAfterImport,
                     },
                 }
                 : n
         )
     }, [])
 
-    // ReactFlow change handlers
-    const handleNodesChange = useCallback((changes: NodeChange[]) => {
-        setNodes((nds) => applyNodeChanges(changes, nds) as Node<TableNodeData>[])
-    }, [setNodes])
-
-    const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-        setEdges((eds) => applyEdgeChanges(changes, eds))
-    }, [setEdges])
-
-    // Function to update node data (for edit-schema-modal)
+    // Function to update node data (for edit-schema-modal and Excel import)
     const updateNodeData = useCallback((nodeId: string, updates: Partial<TableNodeData>) => {
         setNodes((nds) => {
             // Update the specific node
@@ -147,7 +146,7 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
             )
             
             // Inject node data to update reservedTableNames and otherTables for all nodes
-            const injected = injectNodeData(updatedNodes)
+            const injected = injectNodeData(updatedNodes, updateNodeData)
             
             // Rebuild edges based on the updated nodes
             const nextEdges = buildEdgesFromReferences(injected)
@@ -155,7 +154,16 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
             
             return injected
         })
-    }, [setNodes, setEdges, injectNodeData, buildEdgesFromReferences])
+    }, [setNodes, setEdges, buildEdgesFromReferences, injectNodeData])
+
+    // ReactFlow change handlers
+    const handleNodesChange = useCallback((changes: NodeChange[]) => {
+        setNodes((nds) => applyNodeChanges(changes, nds) as Node<TableNodeData>[])
+    }, [setNodes])
+
+    const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+        setEdges((eds) => applyEdgeChanges(changes, eds))
+    }, [setEdges])
 
     // Database operations
     const saveProject = useCallback(async () => {
@@ -195,12 +203,12 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
     // Process project data when it loads from SWR
     useEffect(() => {
         if (projectData) {
-            const injected = injectNodeData(projectData.nodes)
+            const injected = injectNodeData(projectData.nodes, updateNodeData)
             const nextEdges = buildEdgesFromReferences(injected)
             setNodes(injected)
             setEdges(nextEdges)
         }
-    }, [projectData, buildEdgesFromReferences, injectNodeData, setEdges, setNodes])
+    }, [projectData, buildEdgesFromReferences, injectNodeData, setEdges, setNodes, updateNodeData])
 
     // Handle errors from SWR
     useEffect(() => {

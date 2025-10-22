@@ -13,15 +13,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -34,21 +33,17 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-enum UserRole {
-  ADMIN
-  USER
-}
-
 model User {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?       @unique
   emailVerified DateTime?
   image         String?
-  password      String? // For password-based authentication
-  role          UserRole  @default(USER)
+  password      String?
+  role          UserRole      @default(USER)
   accounts      Account[]
   sessions      Session[]
+  chatHistory   ChatHistory[]
 }
 
 model VerificationToken {
@@ -65,8 +60,8 @@ model FlowProject {
   description String?    @default("Main knowledge flow project")
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
-  nodes       FlowNode[]
   edges       FlowEdge[]
+  nodes       FlowNode[]
 
   @@map("flow_projects")
 }
@@ -74,14 +69,14 @@ model FlowProject {
 model FlowNode {
   id        String      @id @default(cuid())
   projectId String
-  project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  nodeId    String // React Flow node ID
-  type      String // Node type (e.g., "table")
-  position  Json // { x: number, y: number }
-  data      Json // TableNodeData as JSON
+  nodeId    String
+  type      String
+  position  Json
+  data      Json
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
-  ragDocs   RagDocs[]   // RAG documents for this node
+  project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ragDocs   RagDocs[]
 
   @@unique([projectId, nodeId])
   @@map("flow_nodes")
@@ -90,28 +85,45 @@ model FlowNode {
 model FlowEdge {
   id           String      @id @default(cuid())
   projectId    String
-  project      FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  edgeId       String // React Flow edge ID
-  source       String // Source node ID
-  target       String // Target node ID
+  edgeId       String
+  source       String
+  target       String
   sourceHandle String?
   targetHandle String?
-  type         String? // Edge type (e.g., "smoothstep")
+  type         String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  project      FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, edgeId])
   @@map("flow_edges")
 }
 
 model RagDocs {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   nodeId    String
-  node      FlowNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   text      String
   embedding String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  node      FlowNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   @@map("rag_docs")
+}
+
+model ChatHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  role      String   // 'user' or 'assistant'
+  content   String
+  timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_history")
+}
+
+enum UserRole {
+  ADMIN
+  USER
 }

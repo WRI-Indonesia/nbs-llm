@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-// import { isAdmin } from '@/lib/auth'
+import { isAdmin } from '@/lib/auth'
 import type { TableNodeData, Column } from '@/types/table-nodes'
 import OpenAI from 'openai'
 
@@ -114,9 +114,9 @@ async function generateEmbedding(text: string): Promise<string | null> {
 export async function GET(request: NextRequest) {
   try {
     // Check if user is admin
-    // if (!(await isAdmin())) {
-    //   return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-    // }
+    if (!(await isAdmin())) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('projectId')
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Delete all existing RAG documents for this project
-    const nodeIds = project.nodes.map(node => node.id)
+    const nodeIds = project.nodes.map((node: any) => node.id)
     await prisma.ragDocs.deleteMany({
       where: { 
         nodeId: { in: nodeIds }
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Generate RAG documents for all table nodes and their columns in the project
-    const tableNodes = project.nodes.filter(node => node.type === 'table')
+    const tableNodes = project.nodes.filter((node: any) => node.type === 'table')
     const generatedRagDocs = []
 
     for (const node of tableNodes) {

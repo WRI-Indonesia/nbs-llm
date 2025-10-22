@@ -29,14 +29,14 @@ export async function GET(
     }
 
     // Convert to React Flow format
-    const nodes: Node<TableNodeData>[] = project.nodes.map(node => ({
+    const nodes: Node<TableNodeData>[] = project.nodes.map((node: any) => ({
       id: node.nodeId,
       type: node.type,
       position: node.position as { x: number; y: number },
       data: node.data as unknown as TableNodeData,
     }))
 
-    const edges: Edge[] = project.edges.map(edge => ({
+    const edges: Edge[] = project.edges.map((edge: any) => ({
       id: edge.edgeId,
       source: edge.source,
       target: edge.target,

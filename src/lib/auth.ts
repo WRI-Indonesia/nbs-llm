@@ -78,13 +78,15 @@ export const authOptions: AuthOptions = {
         },
         async jwt({ token, user, account }: any) {
             if (user) {
+                token.id = user.id
                 token.role = user.role
-            } else if (account?.provider === 'google' && token.email) {
-                // For Google OAuth, fetch role from database
+            } else if (token.email) {
+                // For existing tokens, ensure we have the ID and role
                 const dbUser = await prisma.user.findUnique({
                     where: { email: token.email as string }
                 })
                 if (dbUser) {
+                    token.id = dbUser.id
                     token.role = dbUser.role
                 }
             }
@@ -92,6 +94,7 @@ export const authOptions: AuthOptions = {
         },
         async session({ session, token }: any) {
             if (token) {
+                session.user.id = token.id
                 session.user.role = token.role
             }
             return session
@@ -112,5 +115,22 @@ export async function isAdmin(): Promise<boolean> {
 
 export async function getCurrentUser() {
   const session = await getServerSession(authOptions) as any
-  return session?.user || null
+  
+  if (!session?.user?.email) {
+    return null
+  }
+  
+  // If session doesn't have ID, fetch it from database
+  if (!session.user.id) {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+    
+    if (dbUser) {
+      session.user.id = dbUser.id
+      session.user.role = dbUser.role
+    }
+  }
+  
+  return session.user
 }

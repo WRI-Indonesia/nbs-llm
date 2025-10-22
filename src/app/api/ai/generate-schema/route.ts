@@ -167,9 +167,9 @@ function generateManualSchema(schemaName: string, tableDefinitions: TableDefinit
 export async function POST(request: NextRequest) {
   try {
     // Check if user is admin
-    // if (!(await isAdmin())) {
-    //   return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-    // }
+    if (!(await isAdmin())) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
 
     const body = await request.json()
     const { projectId, useOpenAI = false, includeData = true } = body
@@ -403,9 +403,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Check if user is admin
-    // if (!(await isAdmin())) {
-    //   return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-    // }
+    if (!(await isAdmin())) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('projectId')

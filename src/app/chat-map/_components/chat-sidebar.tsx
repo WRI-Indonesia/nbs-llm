@@ -1,19 +1,15 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, MessageCircle, MapPin } from 'lucide-react'
+import { Plus, MessageCircle, MapPin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
+import { useChat } from '../_hooks/useChat'
 
-interface ChatSidebarProps {
-  onFileUpload: (file: File) => Promise<void>
-  isLoading: boolean
-}
-
-export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
-  const [messages, setMessages] = useState<Array<{ id: string; text: string; isUser: boolean }>>([])
+export function ChatSidebar() {
+  const { messages, sendMessage, clearChatHistory, isSearching, handleFileUpload, isMapLoading } = useChat()
   const [inputValue, setInputValue] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -33,7 +29,7 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
     }
 
     try {
-      await onFileUpload(file)
+      await handleFileUpload(file)
       toast.success(`Successfully processed ${file.name}`)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
@@ -41,26 +37,25 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
     }
   }
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
-    const newMessage = {
-      id: Date.now().toString(),
-      text: inputValue,
-      isUser: true,
-    }
-    setMessages(prev => [...prev, newMessage])
+    const query = inputValue.trim()
     setInputValue('')
 
-    // Simple bot reply
-    setTimeout(() => {
-      const botResponse = {
-        id: (Date.now() + 1).toString(),
-        text: 'I can help you analyze the uploaded map data. What would you like to know?',
-        isUser: false,
-      }
-      setMessages(prev => [...prev, botResponse])
-    }, 600)
+    try {
+      await sendMessage(query, 'DEFAULT')
+    } catch (error) {
+      console.error('Error sending message:', error)
+    }
+  }
+
+  const handleClearChat = async () => {
+    try {
+      await clearChatHistory('DEFAULT')
+    } catch (error) {
+      console.error('Error clearing chat:', error)
+    }
   }
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -78,6 +73,18 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
             <MapPin className="w-5 h-5" />
             Chat Map
           </h2>
+          {messages.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearChat}
+              disabled={isSearching}
+              className="text-red-600 hover:text-red-700"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Clear
+            </Button>
+          )}
       </div>
 
       {/* Chat Messages */}
@@ -88,16 +95,19 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
             <p className="text-sm">Start a conversation about your data now!</p>
           </div>
         ) : (
-          messages.map((message) => (
+          messages.map((message, index) => (
             <div
-              key={message.id}
-              className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+              key={message.id || `message-${index}-${message.timestamp}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <Card
-                className={`max-w-[80%] p-3 ${message.isUser ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+                className={`max-w-[80%] p-3 ${message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
                   }`}
               >
-                <p className="text-sm">{message.text}</p>
+                <p className="text-sm">{message.content}</p>
+                <p className="text-xs opacity-70 mt-1">
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </p>
               </Card>
             </div>
           ))
@@ -119,7 +129,7 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
               variant="outline"
               size="icon"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
+              disabled={isMapLoading}
               title="Upload shapefile (.zip)"
             >
               <Plus className="w-4 h-4" />
@@ -130,14 +140,14 @@ export function ChatSidebar({ onFileUpload, isLoading }: ChatSidebarProps) {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about your map data..."
-            disabled={isLoading}
+            disabled={isMapLoading || isSearching}
             className="flex-1"
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading}
+            disabled={!inputValue.trim() || isMapLoading || isSearching}
           >
-            Send
+            {isSearching ? 'Sending...' : 'Send'}
           </Button>
         </div>
       </div>

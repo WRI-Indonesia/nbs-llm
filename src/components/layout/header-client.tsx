@@ -38,9 +38,9 @@ export const HeaderClient = ({ session }: { session: Session | null }) => {
                         {isAdmin && <Link href="/knowledge" className={pathname === '/knowledge' ? 'font-semibold' : ''}>
                             Knowledge
                         </Link>}
-                        <Link href="/chat-map" className={pathname === '/chat-map' ? 'font-semibold' : ''}>
+                        {session && <Link href="/chat-map" className={pathname === '/chat-map' ? 'font-semibold' : ''}>
                             Chat Map
-                        </Link>
+                        </Link>}
                         {/* <Link href="#" className="text-white hover:text-gray-300 transition-colors">
                             Providers
                         </Link>

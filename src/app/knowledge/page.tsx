@@ -15,53 +15,7 @@ import TableNode from './_components/table-node'
 
 
 export default function KnowledgePage() {
-    const { handleDownloadSample, nodes, edges, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange } = useKnowledge()
-
-    async function callGenerateRagDocs(projectId: string) {
-        if (!projectId) {
-            throw new Error("projectId is required")
-        }
-
-        const url = `/api/ai/index?projectId=${encodeURIComponent(projectId)}`
-
-        const response = await fetch(url, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-            },
-        })
-
-        if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({}))
-            throw new Error(errorBody.error || `Request failed with status ${response.status}`)
-        }
-
-        return response.json()
-    }
-
-    async function callGenerateSchema(projectId: string) {
-        if (!projectId) {
-            throw new Error("projectId is required")
-        }
-
-        const url = `/api/ai/generate-schema`
-
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ projectId })
-        })
-
-        if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({}))
-            throw new Error(errorBody.error || `Request failed with status ${response.status}`)
-        }
-
-        return response.json()
-    }
-
+    const { handleDownloadSample, nodes, edges, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange, addNewTable, handleRefreshIndex } = useKnowledge()
 
     return (
         <div className="pt-14 w-screen h-screen">
@@ -91,6 +45,7 @@ export default function KnowledgePage() {
                         variant="secondary"
                         color="gray"
                         title="add table"
+                        onClick={addNewTable}
                         disabled={isDataLoading}
                     >
                         {isDataLoading ? <Spinner className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -110,10 +65,7 @@ export default function KnowledgePage() {
                         variant="secondary"
                         color="gray"
                         title="refresh-index"
-                        onClick={async () => {
-                            await callGenerateRagDocs('DEFAULT')
-                            await callGenerateSchema('DEFAULT')
-                        }}
+                        onClick={handleRefreshIndex}
                         disabled={isLoading || isDataLoading}
                     >
                         {(isLoading || isDataLoading) ? <Spinner className="w-4 h-4" /> : <LuRefreshCw className="w-4 h-4" />}

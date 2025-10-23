@@ -306,7 +306,7 @@ function TableNode({ id, data }: { id: string; data: TableNodeData }) {
                 </div>
 
                 <div className="px-4 pt-3 pb-2 border-b border-slate-200 bg-gradient-to-r from-white to-slate-50">
-                    <div className="text-base font-semibold text-slate-800 mb-1">{table}</div>
+                    <div className="text-base font-semibold text-slate-800 mb-1 truncate max-w-[210px]" title={table}>{table}</div>
                     {description && <div className="text-xs text-slate-600 leading-relaxed">{description}</div>}
                 </div>
 

@@ -22,6 +22,10 @@ type KnowledgeContextProps = {
     handleNodesChange: (changes: NodeChange[]) => void
     handleEdgesChange: (changes: EdgeChange[]) => void
     updateNodeData: (nodeId: string, updates: Partial<TableNodeData>) => void
+    addNewTable: () => void
+    callGenerateRagDocs: (projectId: string) => Promise<any>
+    callGenerateSchema: (projectId: string) => Promise<any>
+    handleRefreshIndex: () => Promise<void>
 }
 
 export const KnowledgeContext = createContext<KnowledgeContextProps>({
@@ -37,6 +41,10 @@ export const KnowledgeContext = createContext<KnowledgeContextProps>({
     handleNodesChange: () => { },
     handleEdgesChange: () => { },
     updateNodeData: () => { },
+    addNewTable: () => { },
+    callGenerateRagDocs: async () => { },
+    callGenerateSchema: async () => { },
+    handleRefreshIndex: async () => { },
 })
 
 // Fetcher function for SWR
@@ -261,6 +269,115 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
         })
     }, [])
 
+    const addNewTable = useCallback(() => {
+        // Generate a random UUID for table name
+        const tableName = `table_${crypto.randomUUID().replace(/-/g, '_')}`
+        
+        // Create a new table node with id column as primary key
+        const newNode: Node<TableNodeData> = {
+            id: tableName,
+            type: 'table',
+            position: { x: Math.random() * 400, y: Math.random() * 400 }, // Random position
+            data: {
+                table: tableName,
+                description: 'Lorem ipsum',
+                columns: [
+                    {
+                        name: 'id',
+                        type: 'number',
+                        isPrimaryKey: true,
+                        description: 'Primary key identifier'
+                    }
+                ],
+                reservedTableNames: [],
+                otherTables: [],
+                onEditTableMeta: (nodeId: string, next: { table: string; description?: string }) => {
+                    updateNodeData(nodeId, next)
+                },
+                onAfterImport: (nodeId: string, payload: { columns: Column[]; data: any[]; metadata: { table: string; description?: string } }) => {
+                    updateNodeData(nodeId, {
+                        columns: payload.columns,
+                        data: payload.data,
+                        table: payload.metadata.table,
+                        description: payload.metadata.description
+                    })
+                }
+            }
+        }
+
+        setNodes((nds) => {
+            const updatedNodes = [...nds, newNode]
+            const injected = injectNodeData(updatedNodes, updateNodeData)
+            const nextEdges = buildEdgesFromReferences(injected)
+            setEdges(nextEdges)
+            return injected
+        })
+
+        toast.success('New table added', {
+            description: `Table "${tableName}" has been created successfully.`,
+            duration: 3000,
+        })
+    }, [setNodes, setEdges, injectNodeData, buildEdgesFromReferences, updateNodeData])
+
+    const callGenerateRagDocs = useCallback(async (projectId: string) => {
+        if (!projectId) {
+            throw new Error("projectId is required")
+        }
+
+        const url = `/api/ai/index?projectId=${encodeURIComponent(projectId)}`
+
+        const response = await fetch(url, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        })
+
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}))
+            throw new Error(errorBody.error || `Request failed with status ${response.status}`)
+        }
+
+        return response.json()
+    }, [])
+
+    const callGenerateSchema = useCallback(async (projectId: string) => {
+        if (!projectId) {
+            throw new Error("projectId is required")
+        }
+
+        const url = `/api/ai/generate-schema`
+
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ projectId })
+        })
+
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}))
+            throw new Error(errorBody.error || `Request failed with status ${response.status}`)
+        }
+
+        return response.json()
+    }, [])
+
+    const handleRefreshIndex = useCallback(async () => {
+        try {
+            setIsLoading(true)
+            await callGenerateRagDocs('DEFAULT')
+            await callGenerateSchema('DEFAULT')
+            toast.success('Index refreshed successfully')
+        } catch (error) {
+            console.error('Error refreshing index:', error)
+            toast.error('Failed to refresh index')
+        } finally {
+            setIsLoading(false)
+        }
+    }, [callGenerateRagDocs, callGenerateSchema])
+
     const value = useMemo<KnowledgeContextProps>(
         () => ({
             handleDownloadSample,
@@ -275,8 +392,12 @@ export const KnowledgeProvider = ({ children }: { children: ReactNode }) => {
             handleNodesChange,
             handleEdgesChange,
             updateNodeData,
+            addNewTable,
+            callGenerateRagDocs,
+            callGenerateSchema,
+            handleRefreshIndex,
         }),
-        [edges, handleDownloadSample, nodes, setEdges, setNodes, currentProject, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange, updateNodeData]
+        [edges, handleDownloadSample, nodes, setEdges, setNodes, currentProject, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange, updateNodeData, addNewTable, callGenerateRagDocs, callGenerateSchema, handleRefreshIndex]
     )
 
     return <KnowledgeContext.Provider value={value}>{children}</KnowledgeContext.Provider>

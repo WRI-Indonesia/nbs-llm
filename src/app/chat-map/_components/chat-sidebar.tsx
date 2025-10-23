@@ -9,10 +9,12 @@ import { toast } from 'sonner'
 import { useChat } from '../_hooks/useChat'
 import { SqlPopover } from './sql-popover'
 import { RagPopover } from './rag-popover'
+import { DataPopover } from './data-popover'
 
 export function ChatSidebar() {
   const { messages, sendMessage, clearChatHistory, isSearching, handleFileUpload, isMapLoading } = useChat()
   const [inputValue, setInputValue] = useState('')
+  const [currentLocation, setCurrentLocation] = useState<{district: string[], province: string[]}>({district: [], province: []})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,13 +33,62 @@ export function ChatSidebar() {
     }
 
     try {
+      // First upload and process the file
       await handleFileUpload(file)
+      
+      // Then extract geo data and search for matching locations
+      await searchGeoDataFromZip(file)
+      
       toast.success(`Successfully processed ${file.name}`)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
       toast.error(`Error: ${errorMessage}`)
     }
   }
+
+  const searchGeoDataFromZip = async (file: File) => {
+    try {
+      // Create FormData to send the file to geo search API
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/geo/search', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to search geo data from ZIP')
+      }
+
+      const data = await response.json()
+      if (data.success && data.data.length > 0) {
+        // Extract districts and provinces from the results
+        const districts = data.data.map((location: {district: string, province: string}) => location.district).filter(Boolean) as string[]
+        const provinces = data.data.map((location: {district: string, province: string}) => location.province).filter(Boolean) as string[]
+        
+        // Remove duplicates
+        const uniqueDistricts = [...new Set(districts)]
+        const uniqueProvinces = [...new Set(provinces)]
+        
+        // Set the current location
+        setCurrentLocation({
+          district: uniqueDistricts,
+          province: uniqueProvinces
+        })
+        
+        toast.success(`Found ${data.count} matching locations. Location data is now active for your queries.`)
+      } else {
+        toast.info('No matching locations found in geo database')
+        setCurrentLocation({district: [], province: []})
+      }
+    } catch (error) {
+      console.error('Error searching geo data:', error)
+      toast.error('Failed to search geo locations')
+      setCurrentLocation({district: [], province: []})
+    }
+  }
+
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
@@ -46,10 +97,15 @@ export function ChatSidebar() {
     setInputValue('')
 
     try {
-      await sendMessage(query, 'DEFAULT')
+      await sendMessage(query, 'DEFAULT', currentLocation)
     } catch (error) {
       console.error('Error sending message:', error)
     }
+  }
+
+  const handleClearLocation = () => {
+    setCurrentLocation({district: [], province: []})
+    toast.success('Location cleared')
   }
 
   const handleClearChat = async () => {
@@ -115,6 +171,7 @@ export function ChatSidebar() {
                     <div className="flex items-center">
                       <SqlPopover sqlQuery={message.sqlQuery} />
                       <RagPopover ragDocuments={message.ragDocuments} />
+                      <DataPopover data={message.data} />
                     </div>
                   )}
                 </div>
@@ -123,6 +180,35 @@ export function ChatSidebar() {
           ))
         )}
       </div>
+
+      {/* Current Location Status */}
+      {(currentLocation.district.length > 0 || currentLocation.province.length > 0) && (
+        <div className="p-4 border-t border-gray-200 bg-green-50">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-green-700">Active Location Data</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearLocation}
+              className="text-green-600 hover:text-green-700"
+            >
+              Clear
+            </Button>
+          </div>
+          <div className="space-y-1">
+            {currentLocation.district.map((district, index) => (
+              <div key={`district-${index}`} className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                District: {district}
+              </div>
+            ))}
+            {currentLocation.province.map((province, index) => (
+              <div key={`province-${index}`} className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                Province: {province}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Chat Input */}
       <div className="p-4 border-t border-gray-200">
@@ -140,7 +226,7 @@ export function ChatSidebar() {
               size="icon"
               onClick={() => fileInputRef.current?.click()}
               disabled={isMapLoading}
-              title="Upload shapefile (.zip)"
+              title="Upload shapefile (.zip) and find matching locations"
             >
               <Plus className="w-4 h-4" />
             </Button>

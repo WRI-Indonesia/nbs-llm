@@ -35,7 +35,7 @@ export function RagPopover({ ragDocuments }: RagPopoverProps) {
       </PopoverTrigger>
 
       <PopoverContent className="w-96 p-3" align="start">
-        <div className="flex h-[50vh] min-h-0 flex-col gap-4">
+        <div className="flex h-[40vh] min-h-0 flex-col gap-4">
           {/* RAG Documents Section */}
           <div className="flex min-h-0 flex-col">
             <div className="flex items-center gap-2 pb-2 border-b border-neutral-200">

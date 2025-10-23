@@ -119,10 +119,23 @@ model ChatHistory {
   content       String
   sqlQuery      String?  // Store generated SQL query for assistant messages
   ragDocuments  Json?    // Store relevant RAG documents as JSON
+  data          Json?    // Store SQL query results data as JSON
   timestamp     DateTime @default(now())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chat_history")
+}
+
+model GeoLocation {
+  id          Int     @id
+  province    String  @db.VarChar(100)
+  district    String  @db.VarChar(100)
+  subdistrict String  @db.VarChar(100)
+  village     String  @db.VarChar(100)
+  geometry    String? // PostGIS geometry as text
+  metadata_id Int?
+
+  @@map("geo_locations")
 }
 
 enum UserRole {

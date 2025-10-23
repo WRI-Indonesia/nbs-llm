@@ -12,6 +12,9 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp?: string
+  sqlQuery?: string
+  ragDocuments?: any[]
+  data?: any
 }
 
 interface SearchRequest {
@@ -39,7 +42,9 @@ async function getChatHistoryFromDB(userId: string, projectId: string): Promise<
     return history.map((msg: any) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
-      timestamp: msg.timestamp.toISOString()
+      timestamp: msg.timestamp.toISOString(),
+      sqlQuery: msg.sqlQuery || undefined,
+      ragDocuments: msg.ragDocuments ? JSON.parse(msg.ragDocuments) : undefined
     }))
   } catch (error) {
     console.error('Error fetching chat history:', error)
@@ -60,6 +65,9 @@ async function saveChatHistoryToDB(userId: string, projectId: string, messages: 
           projectId,
           role: message.role,
           content: message.content,
+          sqlQuery: message.sqlQuery || null,
+          data: message.data ? JSON.stringify(message.data) : null,
+          ragDocuments: message.ragDocuments ? JSON.stringify(message.ragDocuments) : null,
           timestamp: new Date(message.timestamp || new Date().toISOString())
         }
       })
@@ -218,6 +226,7 @@ Instructions:
 7. Use double quotes around table and column names for safety
 8. Do NOT wrap the query in code blocks or any other formatting
 9. IMPORTANT: Do NOT use schema prefixes like "default" or any schema name - just use table names directly
+10. ALWAYS make sure to include LIMIT, by default LIMIT 10 at the end of the query if the user's query is not a count query
 
 SQL Query:`
 
@@ -401,7 +410,13 @@ export async function POST(request: NextRequest) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { role: 'assistant', content: 'No relevant schema information found to generate a query.', timestamp: new Date().toISOString() }
+        { 
+          role: 'assistant', 
+          content: 'No relevant schema information found to generate a query.', 
+          timestamp: new Date().toISOString(),
+          sqlQuery: undefined,
+          ragDocuments: []
+        }
       ]
       
       // Save chat history to database
@@ -426,7 +441,19 @@ export async function POST(request: NextRequest) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { role: 'assistant', content: 'Unable to generate a valid SQL query for the given question.', timestamp: new Date().toISOString() }
+        { 
+          role: 'assistant', 
+          content: 'Unable to generate a valid SQL query for the given question.', 
+          timestamp: new Date().toISOString(),
+          sqlQuery: undefined,
+          ragDocuments: relevantDocs.map(item => ({
+            id: item.doc.id,
+            tableName: item.doc.node?.data ? JSON.parse(JSON.stringify(item.doc.node.data)).table : 'Unknown',
+            text: item.doc.text,
+            similarity: item.similarity,
+            documentType: item.doc.text.includes('Column:') ? 'column' : 'table'
+          }))
+        }
       ]
       
       // Save chat history to database
@@ -458,7 +485,19 @@ export async function POST(request: NextRequest) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { role: 'assistant', content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`, timestamp: new Date().toISOString() }
+        { 
+          role: 'assistant', 
+          content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`, 
+          timestamp: new Date().toISOString(),
+          sqlQuery: sqlQuery,
+          ragDocuments: relevantDocs.map(item => ({
+            id: item.doc.id,
+            tableName: item.doc.node?.data ? JSON.parse(JSON.stringify(item.doc.node.data)).table : 'Unknown',
+            text: item.doc.text,
+            similarity: item.similarity,
+            documentType: item.doc.text.includes('Column:') ? 'column' : 'table'
+          }))
+        }
       ]
       
       // Save chat history to database
@@ -490,7 +529,20 @@ export async function POST(request: NextRequest) {
     const updatedChatHistory: ChatMessage[] = [
       ...chatHistory,
       { role: 'user', content: query, timestamp: new Date().toISOString() },
-      { role: 'assistant', content: executionResult.answer, timestamp: new Date().toISOString() }
+      { 
+        role: 'assistant', 
+        content: executionResult.answer, 
+        timestamp: new Date().toISOString(),
+        sqlQuery: sqlQuery,
+        ragDocuments: relevantDocs.map(item => ({
+          id: item.doc.id,
+          tableName: item.doc.node?.data ? JSON.parse(JSON.stringify(item.doc.node.data)).table : 'Unknown',
+          text: item.doc.text,
+          similarity: item.similarity,
+          documentType: item.doc.text.includes('Column:') ? 'column' : 'table'
+        })),
+        data: executionResult.data
+      }
     ]
 
     // Save chat history to database

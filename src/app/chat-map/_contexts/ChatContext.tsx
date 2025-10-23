@@ -27,6 +27,7 @@ interface ChatMessage {
     similarity: number
     documentType: string
   }>
+  data?: Array<Record<string, any>>
 }
 
 interface SearchRequest {
@@ -35,6 +36,10 @@ interface SearchRequest {
   top_k?: number
   projectId: string
   chatHistory?: ChatMessage[]
+  location?: {
+    district: string[]
+    province: string[]
+  }
 }
 
 interface SearchResponse {
@@ -70,7 +75,7 @@ type ChatContextProps = {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>
   isLoading: boolean
   isSearching: boolean
-  sendMessage: (query: string, projectId: string) => Promise<void>
+  sendMessage: (query: string, projectId: string, location?: {district: string[], province: string[]}) => Promise<void>
   clearChatHistory: (projectId?: string) => Promise<void>
   chatHistory: ChatMessage[]
   error: string | null
@@ -179,7 +184,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [chatHistoryError])
 
-  const sendMessage = useCallback(async (query: string, projectId: string) => {
+  const sendMessage = useCallback(async (query: string, projectId: string, location?: {district: string[], province: string[]}) => {
     if (!query.trim()) return
 
     setIsSearching(true)
@@ -198,10 +203,11 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     try {
       const searchRequest: SearchRequest = {
         query,
-        min_cosine: 0.2,
-        top_k: 15,
+        min_cosine: 0.25,
+        top_k: 10,
         projectId,
-        chatHistory: messages
+        chatHistory: messages,
+        location
       }
 
       const response = await fetch('/api/ai/search', {

@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
         timestamp: msg.timestamp.toISOString(),
         projectId: msg.projectId,
         sqlQuery: msg.sqlQuery,
-        ragDocuments: JSON.parse(msg.ragDocuments)
+        ragDocuments: msg.ragDocuments ? JSON.parse(msg.ragDocuments) : null,
+        data: msg.data ? JSON.parse(msg.data) : null
       }))
   
       return NextResponse.json({

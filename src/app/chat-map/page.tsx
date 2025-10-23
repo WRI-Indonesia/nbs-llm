@@ -9,7 +9,7 @@ function ChatMapContent() {
   const { map } = useChat()
 
   return (
-    <div className="flex h-screen pt-14">
+    <div className="flex h-screen pt-13">
       {/* Chat Sidebar */}
       <div className="w-[400px] bg-white border-r border-gray-200 flex flex-col">
         <ChatSidebar />

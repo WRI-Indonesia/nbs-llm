@@ -19,6 +19,14 @@ interface ChatMessage {
   content: string
   timestamp: string
   projectId?: string
+  sqlQuery?: string
+  ragDocuments?: Array<{
+    id: string
+    tableName: string
+    text: string
+    similarity: number
+    documentType: string
+  }>
 }
 
 interface SearchRequest {
@@ -114,7 +122,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const [isMapLoading, setIsMapLoading] = useState(false)
 
   const { data: chatHistoryData, error: chatHistoryError, mutate: mutateChatHistory } = useSWR<{ success: boolean; chatHistory: ChatMessage[] }>(
-    '/api/chat-history/clear?projectId=DEFAULT',
+    '/api/chat-history?projectId=DEFAULT',
     chatHistoryFetcher,
     {
       revalidateOnFocus: false,

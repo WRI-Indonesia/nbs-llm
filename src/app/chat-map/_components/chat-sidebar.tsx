@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { useChat } from '../_hooks/useChat'
+import { SqlPopover } from './sql-popover'
+import { RagPopover } from './rag-popover'
 
 export function ChatSidebar() {
   const { messages, sendMessage, clearChatHistory, isSearching, handleFileUpload, isMapLoading } = useChat()
@@ -69,22 +71,22 @@ export function ChatSidebar() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <MapPin className="w-5 h-5" />
-            Chat Map
-          </h2>
-          {messages.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearChat}
-              disabled={isSearching}
-              className="text-red-600 hover:text-red-700"
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              Clear
-            </Button>
-          )}
+        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <MapPin className="w-5 h-5" />
+          Chat Map
+        </h2>
+        {messages.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearChat}
+            disabled={isSearching}
+            className="text-red-600 hover:text-red-700"
+          >
+            <Trash2 className="w-4 h-4 mr-1" />
+            Clear
+          </Button>
+        )}
       </div>
 
       {/* Chat Messages */}
@@ -105,9 +107,17 @@ export function ChatSidebar() {
                   }`}
               >
                 <p className="text-sm">{message.content}</p>
-                <p className="text-xs opacity-70 mt-1">
-                  {new Date(message.timestamp).toLocaleTimeString()}
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs opacity-70">
+                    {new Date(message.timestamp).toLocaleTimeString()}
+                  </p>
+                  {message.role === 'assistant' && (
+                    <div className="flex items-center">
+                      <SqlPopover sqlQuery={message.sqlQuery} />
+                      <RagPopover ragDocuments={message.ragDocuments} />
+                    </div>
+                  )}
+                </div>
               </Card>
             </div>
           ))

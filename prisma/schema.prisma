@@ -112,13 +112,15 @@ model RagDocs {
 }
 
 model ChatHistory {
-  id        String   @id @default(cuid())
-  userId    String
-  projectId String
-  role      String   // 'user' or 'assistant'
-  content   String
-  timestamp DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(cuid())
+  userId        String
+  projectId     String
+  role          String   // 'user' or 'assistant'
+  content       String
+  sqlQuery      String?  // Store generated SQL query for assistant messages
+  ragDocuments  Json?    // Store relevant RAG documents as JSON
+  timestamp     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chat_history")
 }

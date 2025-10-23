@@ -183,7 +183,7 @@ export async function processZipFile(file: File): Promise<ShapefileData[]> {
     let zipContent
     try {
       zipContent = await zip.loadAsync(file)
-    } catch (zipError) {
+    } catch {
       throw new Error('Invalid or corrupted ZIP file. Please ensure the file is a valid ZIP archive.')
     }
 

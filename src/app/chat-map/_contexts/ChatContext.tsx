@@ -75,11 +75,11 @@ type ChatContextProps = {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>
   isLoading: boolean
   isSearching: boolean
-  sendMessage: (query: string, projectId: string, location?: {district: string[], province: string[]}) => Promise<void>
+  sendMessage: (query: string, projectId: string, location?: { district: string[], province: string[] }) => Promise<void>
   clearChatHistory: (projectId?: string) => Promise<void>
   chatHistory: ChatMessage[]
   error: string | null
-  
+
   map: Map | null
   vectorSource: VectorSource | null
   isMapLoading: boolean
@@ -96,7 +96,7 @@ export const ChatContext = createContext<ChatContextProps>({
   clearChatHistory: async () => { },
   chatHistory: [],
   error: null,
-  
+
   map: null,
   vectorSource: null,
   isMapLoading: false,
@@ -136,7 +136,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   )
 
-  const chatHistory = chatHistoryData?.chatHistory || []
+  const chatHistory = useMemo(() => {
+    return chatHistoryData?.chatHistory || []
+  }, [chatHistoryData?.chatHistory])
 
   useEffect(() => {
     const vectorSrc = new VectorSource()
@@ -184,7 +186,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [chatHistoryError])
 
-  const sendMessage = useCallback(async (query: string, projectId: string, location?: {district: string[], province: string[]}) => {
+  const sendMessage = useCallback(async (query: string, projectId: string, location?: { district: string[], province: string[] }) => {
     if (!query.trim()) return
 
     setIsSearching(true)
@@ -203,7 +205,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     try {
       const searchRequest: SearchRequest = {
         query,
-        min_cosine: 0.25,
+        min_cosine: 0.2,
         top_k: 10,
         projectId,
         chatHistory: messages,
@@ -231,9 +233,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       } else {
         toast.error('Search request failed')
       }
-    } catch (error) {
-      console.error('Error sending message:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message'
+    } catch (err) {
+      console.error('Error sending message:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
       setError(errorMessage)
       setMessages(prev => [
         ...prev,
@@ -320,7 +322,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       }
 
       fitToData()
-    } catch (error) {
+    } catch {
       toast.error('Failed to process shapefile')
     } finally {
       setIsMapLoading(false)

@@ -1,4 +1,3 @@
-// app/api/geo/search/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { geoPrisma } from '@/lib/geo-prisma';
 import JSZip from 'jszip';

@@ -76,7 +76,7 @@ export const authOptions: AuthOptions = {
             }
             return true
         },
-        async jwt({ token, user, account }: any) {
+        async jwt({ token, user }: any) {
             if (user) {
                 token.id = user.id
                 token.role = user.role

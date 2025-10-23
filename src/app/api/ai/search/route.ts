@@ -57,7 +57,7 @@ async function saveChatHistoryToDB(userId: string, projectId: string, messages: 
   try {
     // Get the last 2 messages (user query + assistant response)
     const lastMessages = messages.slice(-2)
-    
+
     for (const message of lastMessages) {
       await (prisma as any).chatHistory.create({
         data: {
@@ -126,12 +126,13 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 
 // Function to generate embedding for the search query
 async function generateQueryEmbedding(query: string): Promise<number[]> {
+  console.log('query ', query)
   try {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-large",
       input: query,
     })
-    
+
     return response.data[0].embedding
   } catch (error) {
     console.error('Error generating query embedding:', error)
@@ -159,13 +160,13 @@ async function searchRagDocuments(queryEmbedding: number[], minCosine: number, t
 
   // Calculate similarities and filter by minimum cosine similarity
   const similarities: Array<{ doc: any; similarity: number }> = []
-  
+
   for (const doc of ragDocs) {
     if (doc.embedding) {
       try {
         const docEmbedding = JSON.parse(doc.embedding) as number[]
         const similarity = cosineSimilarity(queryEmbedding, docEmbedding)
-        
+
         if (similarity >= minCosine) {
           similarities.push({ doc, similarity })
         }
@@ -184,22 +185,22 @@ async function searchRagDocuments(queryEmbedding: number[], minCosine: number, t
 // function sanitizeSchemaName(projectId: string): string {
 //   // Remove or replace invalid characters for SQL identifiers
 //   let sanitized = projectId.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()
-  
+
 //   // If it starts with a number, prefix with underscore
 //   if (/^[0-9]/.test(sanitized)) {
 //     sanitized = '_' + sanitized
 //   }
-  
+
 //   // Ensure it's not empty
 //   if (!sanitized) {
 //     sanitized = 'project_' + projectId.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()
 //   }
-  
+
 //   return sanitized
 // }
 
 // Function to generate SQL query using OpenAI
-async function generateSQLQuery(query: string, relevantDocs: any[], projectId: string): Promise<string> {
+async function generateSQLQuery(query: string, relevantDocs: any[]): Promise<string> {
   try {
     // Prepare context from relevant documents
     const context = relevantDocs.map(item => ({
@@ -227,11 +228,13 @@ Instructions:
 8. Do NOT wrap the query in code blocks or any other formatting
 9. IMPORTANT: Do NOT use schema prefixes like "default" or any schema name - just use table names directly
 10. ALWAYS make sure to include LIMIT, by default LIMIT 10 at the end of the query if the user's query is not a count query
+11. Always use ILIKE instead of WHERE for text matching.
+12. When using ILIKE, wrap the search term with %% (e.g., ILIKE '%pattern%'), ensuring the query matches parts of the text case-insensitively.
 
 SQL Query:`
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -254,19 +257,19 @@ SQL Query:`
 }
 
 // Function to clean SQL query from markdown formatting
-function cleanSQLQuery(sqlQuery: string, projectId?: string): string {
+function cleanSQLQuery(sqlQuery: string): string {
   // Remove markdown code blocks (both ```sql and ```)
   let cleaned = sqlQuery.replace(/```sql\s*/gi, '').replace(/```\s*$/g, '')
-  
+
   // Remove any remaining markdown formatting
   cleaned = cleaned.replace(/```/g, '')
-  
+
   // Remove any leading/trailing whitespace and newlines
   cleaned = cleaned.trim()
-  
+
   // Remove schema prefixes - convert "schema"."table" to "table"
   cleaned = cleaned.replace(/"([^"]+)"\."([^"]+)"/g, '"$2"')
-  
+
   return cleaned
 }
 
@@ -283,7 +286,7 @@ async function executeSQLQuery(
 
   try {
     // Clean the SQL query first (this removes schema prefixes)
-    const cleanedQuery = cleanSQLQuery(sqlQuery, projectId)
+    const cleanedQuery = cleanSQLQuery(sqlQuery)
 
     // Execute against the project's schema
     const result = await prismaForSchema.$queryRawUnsafe(cleanedQuery)
@@ -301,7 +304,7 @@ async function executeSQLQuery(
   } finally {
     // In serverless environments it's fine to disconnect after each request.
     // If you switch to a long-lived runtime, consider reusing the client instead.
-    await prismaForSchema.$disconnect().catch(() => {})
+    await prismaForSchema.$disconnect().catch(() => { })
   }
 }
 
@@ -309,7 +312,7 @@ async function executeSQLQuery(
 async function generateAnswer(userQuery: string, data: any[], chatHistory: ChatMessage[] = []): Promise<string> {
   try {
     // Build conversation context from chat history
-    const conversationContext = chatHistory.length > 0 
+    const conversationContext = chatHistory.length > 0
       ? `\n\nPrevious conversation:\n${chatHistory.slice(-6).map(msg => `${msg.role}: ${msg.content}`).join('\n')}`
       : ''
 
@@ -354,7 +357,7 @@ Your short response:
     })
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
       messages,
       temperature: 0.7,
       max_tokens: 500 // Much shorter responses
@@ -410,18 +413,18 @@ export async function POST(request: NextRequest) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { 
-          role: 'assistant', 
-          content: 'No relevant schema information found to generate a query.', 
+        {
+          role: 'assistant',
+          content: 'No relevant schema information found to generate a query.',
           timestamp: new Date().toISOString(),
           sqlQuery: undefined,
           ragDocuments: []
         }
       ]
-      
+
       // Save chat history to database
       await saveChatHistoryToDB(user.id, projectId, updatedChatHistory)
-      
+
       return NextResponse.json({
         success: true,
         query,
@@ -435,15 +438,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate SQL query using the relevant documents
-    const sqlQuery = await generateSQLQuery(query, relevantDocs, projectId)
+    const sqlQuery = await generateSQLQuery(query, relevantDocs)
 
     if (!sqlQuery) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { 
-          role: 'assistant', 
-          content: 'Unable to generate a valid SQL query for the given question.', 
+        {
+          role: 'assistant',
+          content: 'Unable to generate a valid SQL query for the given question.',
           timestamp: new Date().toISOString(),
           sqlQuery: undefined,
           ragDocuments: relevantDocs.map(item => ({
@@ -455,10 +458,10 @@ export async function POST(request: NextRequest) {
           }))
         }
       ]
-      
+
       // Save chat history to database
       await saveChatHistoryToDB(user.id, projectId, updatedChatHistory)
-      
+
       return NextResponse.json({
         success: true,
         query,
@@ -485,9 +488,9 @@ export async function POST(request: NextRequest) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
-        { 
-          role: 'assistant', 
-          content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`, 
+        {
+          role: 'assistant',
+          content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`,
           timestamp: new Date().toISOString(),
           sqlQuery: sqlQuery,
           ragDocuments: relevantDocs.map(item => ({
@@ -499,10 +502,10 @@ export async function POST(request: NextRequest) {
           }))
         }
       ]
-      
+
       // Save chat history to database
       await saveChatHistoryToDB(user.id, projectId, updatedChatHistory)
-      
+
       return NextResponse.json({
         success: true,
         query,
@@ -529,9 +532,9 @@ export async function POST(request: NextRequest) {
     const updatedChatHistory: ChatMessage[] = [
       ...chatHistory,
       { role: 'user', content: query, timestamp: new Date().toISOString() },
-      { 
-        role: 'assistant', 
-        content: executionResult.answer, 
+      {
+        role: 'assistant',
+        content: executionResult.answer,
         timestamp: new Date().toISOString(),
         sqlQuery: sqlQuery,
         ragDocuments: relevantDocs.map(item => ({
@@ -571,7 +574,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in search API:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to process search query',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })

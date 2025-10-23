@@ -58,41 +58,41 @@ async function validateReferences(nodeId: string, columns: Column[]): Promise<Co
 // Function to generate text content for table-level RAG document
 function generateTableRagText(tableData: TableNodeData): string {
   let text = `Table: ${tableData.table}`
-  
+
   if (tableData.description) {
     text += `; Description: ${tableData.description}`
   }
-  
+
   if (tableData.schema) {
     text += `; Schema: ${tableData.schema}`
   }
-  
+
   return text.trim()
 }
 
 // Function to generate text content for a single column RAG document
 function generateColumnRagText(tableData: TableNodeData, column: Column): string {
   let text = `Table: ${tableData.table}; Column: ${column.name}; Type: ${column.type}`
-  
+
   if (column.description) {
     text += `; Description: ${column.description}`
   }
-  
+
   if (column.isPrimaryKey) {
     text += `; Primary Key: Yes`
   }
-  
+
   if (column.isForeignKey) {
     text += `; Foreign Key: Yes`
   }
-  
+
   if (column.references) {
     text += `; References: ${column.references.table}`
     if (column.references.column) {
       text += `.${column.references.column}`
     }
   }
-  
+
   return text.trim()
 }
 
@@ -100,10 +100,10 @@ function generateColumnRagText(tableData: TableNodeData, column: Column): string
 async function generateEmbedding(text: string): Promise<string | null> {
   try {
     const response = await openai.embeddings.create({
-      model: "text-embedding-3-large",
+      model: process.env.OPENAI_EMBEDDING ?? "text-embedding-3-large",
       input: text,
     })
-    
+
     return JSON.stringify(response.data[0].embedding)
   } catch (error) {
     console.error('Error generating embedding:', error)
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     // Delete all existing RAG documents for this project
     const nodeIds = project.nodes.map((node: any) => node.id)
     await prisma.ragDocs.deleteMany({
-      where: { 
+      where: {
         nodeId: { in: nodeIds }
       }
     })
@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
       try {
         // Parse the table data
         const tableData = node.data as unknown as TableNodeData
-        
+
         if (!tableData.table || !tableData.columns) {
           console.warn(`Skipping node ${node.id}: Invalid table data`)
           continue
@@ -250,7 +250,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error generating RAG documents:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to generate RAG documents',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })

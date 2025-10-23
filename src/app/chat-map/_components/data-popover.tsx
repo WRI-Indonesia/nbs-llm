@@ -1,11 +1,10 @@
 "use client"
 
 import { useMemo } from "react"
-import { Table, BarChart3 } from "lucide-react"
+import { Table } from "lucide-react"
 import { LuTable } from "react-icons/lu"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   Table as TableComponent,
@@ -21,9 +20,6 @@ interface DataPopoverProps {
 }
 
 export function DataPopover({ data }: DataPopoverProps) {
-  const hasData = useMemo(() => data && data.length > 0, [data])
-  if (!hasData) return null
-
   // Get all unique column names from the data
   const columns = useMemo(() => {
     if (!data || data.length === 0) return []
@@ -33,6 +29,9 @@ export function DataPopover({ data }: DataPopoverProps) {
     })
     return Array.from(allKeys)
   }, [data])
+
+  const hasData = useMemo(() => data && data.length > 0, [data])
+  if (!hasData) return null
 
   return (
     <Popover>

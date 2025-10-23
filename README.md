@@ -1,33 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NBS LLM - Nature-Based Solutions Language Learning Model
+
+This is a [Next.js](https://nextjs.org) project that provides an AI-powered chat interface for querying Nature-Based Solutions data with integrated mapping capabilities.
+
+## Features
+
+- 🤖 AI-powered chat interface for data queries
+- 🗺️ Interactive map visualization with shapefile support
+- 📊 SQL query generation and execution
+- 🔍 RAG (Retrieval-Augmented Generation) for context-aware responses
+- 📈 Data visualization and analysis tools
+- 🔐 Authentication with Google OAuth
+
+## Prerequisites
+
+- Node.js 18+ 
+- PostgreSQL database
+- OpenAI API key
+- Google OAuth credentials
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Environment Setup
+
+Create a `.env.local` file in the root directory and add the following variables:
+
+```env
+# Database
+DATABASE_URL="postgresql://username:password@localhost:5432/nbs_llm"
+
+# NextAuth
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-key"
+
+# Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+
+# OpenAI
+OPENAI_API_KEY="your-openai-api-key"
+OPENAI_MODEL="gpt-4o-mini"
+OPENAI_EMBEDDING="text-embedding-3-large"
+```
+
+### 3. Database Setup
+
+Set up your PostgreSQL database and run the Prisma migrations:
+
+```bash
+# Push the database schema to your database
+npx prisma db push
+
+# Seed the database with initial data
+npx prisma db seed
+```
+
+### 4. Run the Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `src/app/` - Next.js app router pages and API routes
+- `src/app/chat-map/` - Chat interface with map integration
+- `src/app/knowledge/` - Knowledge management interface
+- `src/components/` - Reusable UI components
+- `src/lib/` - Utility functions and configurations
+- `prisma/` - Database schema and migrations
+
+## Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run lint` - Run ESLint
+- `npx prisma studio` - Open Prisma Studio for database management
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
+To learn more about the technologies used:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API
+- [Prisma Documentation](https://www.prisma.io/docs) - database toolkit and ORM
+- [OpenLayers](https://openlayers.org/) - mapping library
+- [NextAuth.js](https://next-auth.js.org/) - authentication for Next.js
 
 ## Deploy on Vercel
 

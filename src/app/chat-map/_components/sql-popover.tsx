@@ -1,6 +1,6 @@
 "use client"
 
-import { Database, Info } from "lucide-react"
+import { Database } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Card } from "@/components/ui/card"

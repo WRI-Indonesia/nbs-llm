@@ -15,35 +15,13 @@ export function ChatSidebar() {
   const { messages, sendMessage, clearChatHistory, isSearching, handleFileUpload, isMapLoading } = useChat()
   const [inputValue, setInputValue] = useState('')
   const [currentLocation, setCurrentLocation] = useState<{district: string[], province: string[]}>({district: [], province: []})
+  const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-
-    const isZip = file.type === 'application/zip' || file.name.toLowerCase().endsWith('.zip')
-    if (!isZip) {
-      toast.error('Please select a ZIP file containing shapefiles')
-      return
-    }
-
-    try {
-      // First upload and process the file
-      await handleFileUpload(file)
-      
-      // Then extract geo data and search for matching locations
-      await searchGeoDataFromZip(file)
-      
-      toast.success(`Successfully processed ${file.name}`)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
-      toast.error(`Error: ${errorMessage}`)
-    }
+    await processFile(file)
   }
 
   const searchGeoDataFromZip = async (file: File) => {
@@ -87,6 +65,63 @@ export function ChatSidebar() {
       toast.error('Failed to search geo locations')
       setCurrentLocation({district: [], province: []})
     }
+  }
+
+  // Centralized file processor for both click-upload and drag-and-drop
+  const processFile = async (file: File) => {
+    // Reset file input (so selecting the same file again triggers onChange)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+
+    const lower = file.name.toLowerCase()
+    const isZip = file.type === 'application/zip' || lower.endsWith('.zip')
+    const isGeoJSON = lower.endsWith('.geojson') || (file.type === 'application/geo+json') || (file.type === 'application/json' && lower.includes('geojson'))
+    const isKML = lower.endsWith('.kml') || lower.endsWith('.kmz') || file.type === 'application/vnd.google-earth.kml+xml'
+
+    if (!(isZip || isGeoJSON || isKML)) {
+      toast.error('Unsupported file. Use .zip (shapefile), .geojson, .kml, or .kmz')
+      return
+    }
+
+    try {
+      // Upload/process the file server-side
+      await handleFileUpload(file)
+
+      // Only run geo search enrichment for ZIP shapefiles (backend expects a zip)
+      if (isZip) {
+        await searchGeoDataFromZip(file)
+      } else {
+        toast.info('Uploaded successfully. Location lookup runs for shapefile ZIPs only.')
+      }
+
+      toast.success(`Successfully processed ${file.name}`)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
+      toast.error(`Error: ${errorMessage}`)
+    }
+  }
+
+  // Drag and Drop handlers
+  const handleDragOver: React.DragEventHandler<HTMLDivElement> = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isDragging) setIsDragging(true)
+  }
+
+  const handleDragLeave: React.DragEventHandler<HTMLDivElement> = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop: React.DragEventHandler<HTMLDivElement> = async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (!file) return
+    await processFile(file)
   }
 
 
@@ -146,7 +181,21 @@ export function ChatSidebar() {
       </div>
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div 
+        className={`flex-1 overflow-y-auto p-4 space-y-3 relative ${isDragging ? 'bg-blue-50' : ''}`}
+        onDragEnter={handleDragOver}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-blue-50/90 border-2 border-dashed border-blue-400 pointer-events-none">
+            <div className="text-center">
+              <div className="text-blue-700 text-lg font-semibold mb-2">Drop file here to upload</div>
+              <div className="text-blue-600 text-sm">Supported: .zip, .geojson, .kml, .kmz</div>
+            </div>
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
             <MessageCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
@@ -217,7 +266,7 @@ export function ChatSidebar() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".zip"
+              accept=".zip,.geojson,.json,.kml,.kmz"
               className="hidden"
               onChange={handleFileSelect}
             />

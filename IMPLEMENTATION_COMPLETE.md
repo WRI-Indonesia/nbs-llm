@@ -230,12 +230,12 @@ USER QUERY
 Add to `.env.local`:
 ```bash
 # MinIO
-MINIO_ENDPOINT=https://s3.wri-indonesia.id
-MINIO_REGION=ap-southeast-1
-MINIO_ACCESS_KEY=deddysetiawan
-MINIO_SECRET_KEY="vXNF9{:01]Sw"
-MINIO_BUCKET=etl-kms
-MINIO_PAPERS_PATH=open_alex/gold_papers/
+MINIO_ENDPOINT=
+MINIO_REGION=
+MINIO_ACCESS_KEY=
+MINIO_SECRET_KEY=
+MINIO_BUCKET=
+MINIO_PAPERS_PATH=
 
 # OpenAI
 OPENAI_API_KEY=your_key

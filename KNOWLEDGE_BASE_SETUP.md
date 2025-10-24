@@ -53,12 +53,12 @@ Add these environment variables to your `.env` or `.env.local`:
 
 ```bash
 # MinIO Configuration for WRI Knowledge Base
-MINIO_ENDPOINT=https://s3.wri-indonesia.id
-MINIO_REGION=ap-southeast-1
-MINIO_ACCESS_KEY=deddysetiawan
-MINIO_SECRET_KEY="vXNF9{:01]Sw"
-MINIO_BUCKET=etl-kms
-MINIO_PAPERS_PATH=open_alex/gold_papers/
+MINIO_ENDPOINT=
+MINIO_REGION=
+MINIO_ACCESS_KEY=
+MINIO_SECRET_KEY=
+MINIO_BUCKET=
+MINIO_PAPERS_PATH=
 
 # OpenAI (already configured)
 OPENAI_API_KEY=your_key_here
@@ -99,7 +99,7 @@ IMPORT_LIMIT=10 npx tsx src/scripts/import-papers.ts
 ```
 
 The import script will:
-1. Connect to MinIO at `etl-kms/open_alex/gold_papers/`
+1. Connect to MinIO at ``
 2. Download each PDF paper
 3. Extract text content
 4. Chunk text into semantic segments (~800 tokens each)

@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef } from 'react'
-import { Plus, MessageCircle, MapPin, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Plus, MessageCircle, MapPin, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
@@ -25,6 +25,7 @@ export function ChatSidebar() {
     handleKeyDown
   } = useChat()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isLocationExpanded, setIsLocationExpanded] = useState(false)
 
   return (
     <div className="flex flex-col h-full">
@@ -85,31 +86,39 @@ export function ChatSidebar() {
       </div>
 
       {/* Current Location Status */}
-      {(currentLocation.district.length > 0 || currentLocation.province.length > 0) && (
-        <div className="p-4 border-t border-gray-200 bg-green-50">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-green-700">Active Location Data</h3>
+      {currentLocation.district.length > 0 && (
+        <div className="border-t border-gray-200 bg-green-50">
+          <div className="flex items-center justify-between pt-2 pb-3 pe-3 ps-1">
+            <Button
+              variant="ghost"
+              onClick={() => setIsLocationExpanded(!isLocationExpanded)}
+              className="flex items-center gap-2 p-0 h-auto text-green-700 hover:text-green-800 hover:bg-transparent"
+            >
+              <span className="text-sm font-medium">Distrct Project Location</span>
+              {isLocationExpanded ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+            </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleClearLocation}
               className="text-green-600 hover:text-green-700"
             >
-              Clear
+              <Trash2 className="w-4 h-4" />
             </Button>
           </div>
-          <div className="space-y-1">
-            {currentLocation.district.map((district, index) => (
-              <div key={`district-${index}`} className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                District: {district}
-              </div>
-            ))}
-            {currentLocation.province.map((province, index) => (
-              <div key={`province-${index}`} className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                Province: {province}
-              </div>
-            ))}
-          </div>
+          {isLocationExpanded && (
+            <div className="px-3 pb-3 space-y-1">
+              {currentLocation.district.map((district, index) => (
+                <div key={`district-${index}`} className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                  District: {district}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

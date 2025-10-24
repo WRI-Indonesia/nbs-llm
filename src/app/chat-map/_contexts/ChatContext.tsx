@@ -450,8 +450,12 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 
   const handleClearLocation = useCallback(() => {
     setCurrentLocation({district: [], province: []})
-    toast.success('Location cleared')
-  }, [])
+    // Clear map data
+    if (vectorSource) {
+      vectorSource.clear()
+    }
+    toast.success('Location and map cleared')
+  }, [vectorSource])
 
   const handleClearChat = useCallback(async () => {
     try {

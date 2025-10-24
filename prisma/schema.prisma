@@ -104,10 +104,13 @@ model RagDocs {
   nodeId    String
   text      String
   embedding String?
+  source    String?  @default("schema") // "schema", "paper", "document"
+  payload   Json?    // Flexible metadata for papers (title, authors, year, doi, etc)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   node      FlowNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
+  @@index([source])
   @@map("rag_docs")
 }
 

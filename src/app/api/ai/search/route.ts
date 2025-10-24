@@ -140,14 +140,15 @@ async function generateQueryEmbedding(query: string): Promise<number[]> {
   }
 }
 
-// Function to search for relevant RAG documents
+// Function to search for relevant RAG documents (schemas only)
 async function searchRagDocuments(queryEmbedding: number[], minCosine: number, topK: number) {
-  // Get all RAG documents with embeddings
+  // Get all RAG documents with embeddings (schema only)
   const ragDocs = await (prisma.ragDocs.findMany as any)({
     where: {
       embedding: {
         not: null
-      }
+      },
+      source: 'schema' // Only schema documents
     },
     include: {
       node: {
@@ -172,6 +173,48 @@ async function searchRagDocuments(queryEmbedding: number[], minCosine: number, t
         }
       } catch (error) {
         console.error('Error parsing embedding for doc:', doc.id, error)
+      }
+    }
+  }
+
+  // Sort by similarity and return top K results
+  similarities.sort((a, b) => b.similarity - a.similarity)
+  return similarities.slice(0, topK)
+}
+
+// Function to search for relevant research papers
+async function searchPapers(queryEmbedding: number[], minCosine: number, topK: number) {
+  // Get all paper documents with embeddings
+  const paperDocs = await (prisma.ragDocs.findMany as any)({
+    where: {
+      embedding: {
+        not: null
+      },
+      source: 'paper' // Only paper documents
+    },
+    include: {
+      node: true
+    }
+  })
+
+  // Calculate similarities and filter by minimum cosine similarity
+  const similarities: Array<{ doc: any; similarity: number; payload: any }> = []
+
+  for (const doc of paperDocs) {
+    if (doc.embedding) {
+      try {
+        const docEmbedding = JSON.parse(doc.embedding) as number[]
+        const similarity = cosineSimilarity(queryEmbedding, docEmbedding)
+
+        if (similarity >= minCosine) {
+          similarities.push({ 
+            doc, 
+            similarity,
+            payload: doc.payload || {}
+          })
+        }
+      } catch (error) {
+        console.error('Error parsing embedding for paper doc:', doc.id, error)
       }
     }
   }
@@ -373,6 +416,114 @@ Your short response:
   }
 }
 
+// Query Classification: Determine if query needs papers, data, or both
+interface QueryIntent {
+  needsPapers: boolean
+  needsData: boolean
+  isConceptual: boolean
+  keywords: string[]
+}
+
+async function classifyQueryIntent(query: string): Promise<QueryIntent> {
+  const lowerQuery = query.toLowerCase()
+  
+  // Keywords that indicate need for research papers
+  const paperKeywords = [
+    'research', 'study', 'paper', 'literature', 'evidence', 'findings',
+    'methodology', 'theory', 'framework', 'review', 'meta-analysis',
+    'published', 'journal', 'scientific', 'academic', 'according to',
+    'best practice', 'approach', 'method', 'technique', 'policy',
+    'what is', 'how does', 'why', 'explain', 'definition', 'concept'
+  ]
+  
+  // Keywords that indicate need for factual data
+  const dataKeywords = [
+    'how many', 'how much', 'count', 'total', 'average', 'sum',
+    'list', 'show', 'display', 'find', 'get', 'filter',
+    'rate', 'percentage', 'trend', 'change', 'statistics',
+    'data', 'records', 'rows', 'table', 'database'
+  ]
+  
+  const foundPaperKeywords = paperKeywords.filter(kw => lowerQuery.includes(kw))
+  const foundDataKeywords = dataKeywords.filter(kw => lowerQuery.includes(kw))
+  
+  return {
+    needsPapers: foundPaperKeywords.length > 0,
+    needsData: foundDataKeywords.length > 0 || (!foundPaperKeywords.length), // Default to data
+    isConceptual: foundPaperKeywords.length > foundDataKeywords.length,
+    keywords: [...foundPaperKeywords, ...foundDataKeywords]
+  }
+}
+
+// Synthesis Agent: Combine knowledge from papers + data
+async function synthesizeResponse(
+  query: string,
+  papers: any[],
+  dataResults: any[],
+  sqlQuery?: string
+): Promise<string> {
+  try {
+    const hasPapers = papers.length > 0
+    const hasData = dataResults.length > 0
+    
+    let prompt = `You are a research synthesis expert. Answer the user's question by combining scientific knowledge and factual data.
+
+User Question: "${query}"
+`
+
+    if (hasPapers) {
+      prompt += `\n### Scientific Knowledge (from peer-reviewed papers):
+${papers.map((p, idx) => {
+  const payload = p.payload || {}
+  return `${idx + 1}. [${payload.title || 'Unknown Paper'}] (${payload.authors || 'Unknown'}, ${payload.year || 'N/A'})
+   Section: ${payload.section || 'General'}
+   Excerpt: ${p.doc.text.substring(0, 300)}...
+   Relevance: ${(p.similarity * 100).toFixed(1)}%`
+}).join('\n\n')}`
+    }
+
+    if (hasData) {
+      prompt += `\n\n### Factual Data (from database):
+SQL Query: ${sqlQuery || 'N/A'}
+
+Data Results:
+${JSON.stringify(dataResults.slice(0, 10), null, 2)}`
+    }
+
+    prompt += `\n\nInstructions:
+1. Synthesize a comprehensive answer that combines scientific evidence (papers) with factual data
+2. If papers provide theoretical context, use data to show real-world examples
+3. Cite specific papers when making claims (e.g., "According to [Author, Year]...")
+4. Use data to support or illustrate concepts from papers
+5. Be concise but informative (max 300 words)
+6. If data contradicts or supports paper findings, mention it
+7. Format the response in a clear, professional manner
+
+Answer:`
+
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL ?? 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a research synthesis expert who combines scientific literature with empirical data to provide comprehensive, evidence-based answers.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 800
+    })
+
+    return completion.choices[0]?.message?.content?.trim() || 'Unable to synthesize response.'
+  } catch (error) {
+    console.error('Error in synthesis:', error)
+    return 'Error synthesizing response from papers and data.'
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Get current user
@@ -403,41 +554,102 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'top_k must be between 1 and 20' }, { status: 400 })
     }
 
+    // ===== PHASE 1: Query Classification =====
+    console.log('🔍 Classifying query intent...')
+    const queryIntent = await classifyQueryIntent(query)
+    console.log('Query intent:', queryIntent)
+
     // Generate embedding for the search query
     const queryEmbedding = await generateQueryEmbedding(query)
 
-    // Search for relevant RAG documents
-    const relevantDocs = await searchRagDocuments(queryEmbedding, min_cosine, top_k)
+    // ===== PHASE 2: Parallel Multi-Source Retrieval =====
+    console.log('📚 Retrieving from multiple sources...')
+    const [relevantDocs, relevantPapers] = await Promise.all([
+      queryIntent.needsData ? searchRagDocuments(queryEmbedding, min_cosine, top_k) : Promise.resolve([]),
+      queryIntent.needsPapers ? searchPapers(queryEmbedding, min_cosine * 0.8, top_k) : Promise.resolve([]) // Lower threshold for papers
+    ])
 
-    if (relevantDocs.length === 0) {
+    console.log(`Found ${relevantDocs.length} schema docs, ${relevantPapers.length} papers`)
+
+    // ===== PHASE 3: Handle Different Scenarios =====
+    
+    // Scenario 1: Only papers available (conceptual query)
+    if (relevantDocs.length === 0 && relevantPapers.length > 0) {
+      console.log('📚 Papers-only query (conceptual/theoretical)')
+      
+      const synthesizedAnswer = await synthesizeResponse(query, relevantPapers, [], undefined)
+      
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
         { role: 'user', content: query, timestamp: new Date().toISOString() },
         {
           role: 'assistant',
-          content: 'No relevant schema information found to generate a query.',
+          content: synthesizedAnswer,
+          timestamp: new Date().toISOString(),
+          sqlQuery: undefined,
+          ragDocuments: relevantPapers.map(p => ({
+            id: p.doc.id,
+            title: p.payload.title || 'Unknown',
+            authors: p.payload.authors || 'Unknown',
+            year: p.payload.year || 'N/A',
+            section: p.payload.section,
+            text: p.doc.text.substring(0, 200),
+            similarity: p.similarity
+          }))
+        }
+      ]
+
+      await saveChatHistoryToDB(user.id, projectId, updatedChatHistory)
+
+      return NextResponse.json({
+        success: true,
+        query,
+        message: 'Answer based on research papers',
+        sqlQuery: null,
+        answer: synthesizedAnswer,
+        data: [],
+        papers: relevantPapers.map(p => ({
+          title: p.payload.title,
+          authors: p.payload.authors,
+          year: p.payload.year,
+          section: p.payload.section,
+          similarity: p.similarity
+        })),
+        chatHistory: updatedChatHistory,
+        queryIntent
+      })
+    }
+
+    // Scenario 2: No data or papers found
+    if (relevantDocs.length === 0 && relevantPapers.length === 0) {
+      const updatedChatHistory: ChatMessage[] = [
+        ...chatHistory,
+        { role: 'user', content: query, timestamp: new Date().toISOString() },
+        {
+          role: 'assistant',
+          content: 'No relevant information found in database schema or research papers.',
           timestamp: new Date().toISOString(),
           sqlQuery: undefined,
           ragDocuments: []
         }
       ]
 
-      // Save chat history to database
       await saveChatHistoryToDB(user.id, projectId, updatedChatHistory)
 
       return NextResponse.json({
         success: true,
         query,
-        message: 'No relevant schema information found for the given query',
+        message: 'No relevant information found',
         sqlQuery: null,
-        answer: 'No relevant schema information found to generate a query.',
+        answer: 'No relevant information found in database schema or research papers.',
         data: [],
         chatHistory: updatedChatHistory,
-        relevantDocuments: []
+        relevantDocuments: [],
+        queryIntent
       })
     }
 
-    // Generate SQL query using the relevant documents
+    // Scenario 3: Data available - proceed with SQL generation
     const sqlQuery = await generateSQLQuery(query, relevantDocs)
 
     if (!sqlQuery) {
@@ -528,22 +740,49 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ===== PHASE 4: Synthesis =====
+    // If we have both papers and data, synthesize; otherwise use default answer
+    let finalAnswer = executionResult.answer
+    
+    if (relevantPapers.length > 0) {
+      console.log('🔬 Synthesizing answer from papers + data')
+      finalAnswer = await synthesizeResponse(
+        query,
+        relevantPapers,
+        executionResult.data,
+        sqlQuery
+      )
+    }
+
     // Create updated chat history with the new exchange
     const updatedChatHistory: ChatMessage[] = [
       ...chatHistory,
       { role: 'user', content: query, timestamp: new Date().toISOString() },
       {
         role: 'assistant',
-        content: executionResult.answer,
+        content: finalAnswer,
         timestamp: new Date().toISOString(),
         sqlQuery: sqlQuery,
-        ragDocuments: relevantDocs.map(item => ({
-          id: item.doc.id,
-          tableName: item.doc.node?.data ? JSON.parse(JSON.stringify(item.doc.node.data)).table : 'Unknown',
-          text: item.doc.text,
-          similarity: item.similarity,
-          documentType: item.doc.text.includes('Column:') ? 'column' : 'table'
-        })),
+        ragDocuments: [
+          ...relevantDocs.map(item => ({
+            id: item.doc.id,
+            source: 'schema',
+            tableName: item.doc.node?.data ? JSON.parse(JSON.stringify(item.doc.node.data)).table : 'Unknown',
+            text: item.doc.text,
+            similarity: item.similarity,
+            documentType: item.doc.text.includes('Column:') ? 'column' : 'table'
+          })),
+          ...relevantPapers.map(p => ({
+            id: p.doc.id,
+            source: 'paper',
+            title: p.payload.title,
+            authors: p.payload.authors,
+            year: p.payload.year,
+            section: p.payload.section,
+            text: p.doc.text.substring(0, 200),
+            similarity: p.similarity
+          }))
+        ],
         data: executionResult.data
       }
     ]
@@ -555,8 +794,15 @@ export async function POST(request: NextRequest) {
       success: true,
       query,
       sqlQuery,
-      answer: executionResult.answer,
+      answer: finalAnswer,
       data: executionResult.data,
+      papers: relevantPapers.length > 0 ? relevantPapers.map(p => ({
+        title: p.payload.title,
+        authors: p.payload.authors,
+        year: p.payload.year,
+        section: p.payload.section,
+        similarity: p.similarity
+      })) : undefined,
       chatHistory: updatedChatHistory,
       relevantDocuments: relevantDocs.map(item => ({
         id: item.doc.id,
@@ -567,9 +813,11 @@ export async function POST(request: NextRequest) {
       })),
       searchStats: {
         totalDocumentsFound: relevantDocs.length,
+        totalPapersFound: relevantPapers.length,
         minCosineThreshold: min_cosine,
         topK: top_k
-      }
+      },
+      queryIntent
     })
 
   } catch (error) {

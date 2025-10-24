@@ -88,13 +88,13 @@ export function ChatSidebar() {
       {/* Current Location Status */}
       {currentLocation.district.length > 0 && (
         <div className="border-t border-gray-200 bg-green-50">
-          <div className="flex items-center justify-between pt-2 pb-3 pe-3 ps-1">
+          <div className="flex items-center justify-between pt-2 pb-2 pe-3 ps-1">
             <Button
               variant="ghost"
               onClick={() => setIsLocationExpanded(!isLocationExpanded)}
               className="flex items-center gap-2 p-0 h-auto text-green-700 hover:text-green-800 hover:bg-transparent"
             >
-              <span className="text-sm font-medium">Distrct Project Location</span>
+              <span className="text-sm font-medium">District of Project Location</span>
               {isLocationExpanded ? (
                 <ChevronDown className="w-4 h-4" />
               ) : (

@@ -66,7 +66,6 @@ export async function POST(request: NextRequest) {
     // Re-prompt query to handle inputted district
     const repromtResult = await repromptQuery(query, location.district)
     const newQuery = repromtResult.result
-    console.log('newQuery', newQuery)
 
     if (newQuery === 'false') {
       const updatedChatHistory = createUpdatedChatHistory(

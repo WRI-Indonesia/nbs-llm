@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Card } from "@/components/ui/card"
 import { PiFileSqlDuotone } from "react-icons/pi";
+import { useChat } from "../_hooks/useChat"
 
 interface SqlPopoverProps {
     sqlQuery?: string
 }
 
 export function SqlPopover({ sqlQuery }: SqlPopoverProps) {
+    const { copyToClipboard } = useChat()
+    
     if (!sqlQuery) return null
 
     return (
@@ -34,7 +37,7 @@ export function SqlPopover({ sqlQuery }: SqlPopoverProps) {
                                     <h4 className="text-sm font-medium">Generated SQL Query</h4>
                                 </div>
                                 <button
-                                    onClick={() => navigator.clipboard.writeText(sqlQuery)}
+                                    onClick={() => copyToClipboard(sqlQuery)}
                                     className="text-xs text-blue-600 hover:underline"
                                 >
                                     Copy

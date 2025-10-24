@@ -1,127 +1,30 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
 import { Plus, MessageCircle, MapPin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { toast } from 'sonner'
 import { useChat } from '../_hooks/useChat'
 import { SqlPopover } from './sql-popover'
 import { RagPopover } from './rag-popover'
 import { DataPopover } from './data-popover'
 
 export function ChatSidebar() {
-  const { messages, sendMessage, clearChatHistory, isSearching, handleFileUpload, isMapLoading } = useChat()
-  const [inputValue, setInputValue] = useState('')
-  const [currentLocation, setCurrentLocation] = useState<{district: string[], province: string[]}>({district: [], province: []})
+  const {
+    messages,
+    isSearching,
+    isMapLoading,
+    inputValue,
+    setInputValue,
+    currentLocation,
+    handleFileSelect,
+    handleSendMessage,
+    handleClearLocation,
+    handleClearChat,
+    handleKeyDown
+  } = useChat()
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-
-    const isZip = file.type === 'application/zip' || file.name.toLowerCase().endsWith('.zip')
-    if (!isZip) {
-      toast.error('Please select a ZIP file containing shapefiles')
-      return
-    }
-
-    try {
-      // First upload and process the file
-      await handleFileUpload(file)
-      
-      // Then extract geo data and search for matching locations
-      await searchGeoDataFromZip(file)
-      
-      toast.success(`Successfully processed ${file.name}`)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
-      toast.error(`Error: ${errorMessage}`)
-    }
-  }
-
-  const searchGeoDataFromZip = async (file: File) => {
-    try {
-      // Create FormData to send the file to geo search API
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('/api/geo/search', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to search geo data from ZIP')
-      }
-
-      const data = await response.json()
-      if (data.success && data.data.length > 0) {
-        // Extract districts and provinces from the results
-        const districts = data.data.map((location: {district: string, province: string}) => location.district).filter(Boolean) as string[]
-        const provinces = data.data.map((location: {district: string, province: string}) => location.province).filter(Boolean) as string[]
-        
-        // Remove duplicates
-        const uniqueDistricts = [...new Set(districts)]
-        const uniqueProvinces = [...new Set(provinces)]
-        
-        // Set the current location
-        setCurrentLocation({
-          district: uniqueDistricts,
-          province: uniqueProvinces
-        })
-        
-        toast.success(`Found ${data.count} matching locations. Location data is now active for your queries.`)
-      } else {
-        toast.info('No matching locations found in geo database')
-        setCurrentLocation({district: [], province: []})
-      }
-    } catch (error) {
-      console.error('Error searching geo data:', error)
-      toast.error('Failed to search geo locations')
-      setCurrentLocation({district: [], province: []})
-    }
-  }
-
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
-
-    const query = inputValue.trim()
-    setInputValue('')
-
-    try {
-      await sendMessage(query, 'DEFAULT', currentLocation)
-    } catch (error) {
-      console.error('Error sending message:', error)
-    }
-  }
-
-  const handleClearLocation = () => {
-    setCurrentLocation({district: [], province: []})
-    toast.success('Location cleared')
-  }
-
-  const handleClearChat = async () => {
-    try {
-      await clearChatHistory('DEFAULT')
-    } catch (error) {
-      console.error('Error clearing chat:', error)
-    }
-  }
-
-  const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
-  }
 
   return (
     <div className="flex flex-col h-full">

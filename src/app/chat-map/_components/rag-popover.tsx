@@ -1,12 +1,12 @@
 "use client"
 
-import { useMemo } from "react"
 import { FileText } from "lucide-react"
 import { LuBook } from "react-icons/lu"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useChat } from "../_hooks/useChat"
 
 interface RagPopoverProps {
   ragDocuments?: Array<{
@@ -19,8 +19,10 @@ interface RagPopoverProps {
 }
 
 export function RagPopover({ ragDocuments }: RagPopoverProps) {
-  const hasData = useMemo(() => ragDocuments && ragDocuments.length > 0, [ragDocuments])
-  if (!hasData) return null
+  const { hasRagDocuments } = useChat()
+  
+  const hasValidData = hasRagDocuments(ragDocuments)
+  if (!hasValidData) return null
 
   return (
     <Popover>

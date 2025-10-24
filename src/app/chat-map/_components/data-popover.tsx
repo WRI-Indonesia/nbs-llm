@@ -1,6 +1,5 @@
 "use client"
 
-import { useMemo } from "react"
 import { Table } from "lucide-react"
 import { LuTable } from "react-icons/lu"
 import { Button } from "@/components/ui/button"
@@ -14,24 +13,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { useChat } from "../_hooks/useChat"
 
 interface DataPopoverProps {
   data?: Array<Record<string, any>>
 }
 
 export function DataPopover({ data }: DataPopoverProps) {
-  // Get all unique column names from the data
-  const columns = useMemo(() => {
-    if (!data || data.length === 0) return []
-    const allKeys = new Set<string>()
-    data.forEach(row => {
-      Object.keys(row).forEach(key => allKeys.add(key))
-    })
-    return Array.from(allKeys)
-  }, [data])
-
-  const hasData = useMemo(() => data && data.length > 0, [data])
-  if (!hasData) return null
+  const { getDataColumns, hasData } = useChat()
+  
+  const columns = getDataColumns(data)
+  const hasValidData = hasData(data)
+  
+  if (!hasValidData) return null
 
   return (
     <Popover>

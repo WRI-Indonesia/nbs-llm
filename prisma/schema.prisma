@@ -62,6 +62,7 @@ model FlowProject {
   updatedAt   DateTime   @updatedAt
   edges       FlowEdge[]
   nodes       FlowNode[]
+  MinioDocs   MinioDocs[]
 
   @@map("flow_projects")
 }
@@ -76,7 +77,7 @@ model FlowNode {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  ragDocs   RagDocs[]
+  nodeDocs  NodeDocs[]
 
   @@unique([projectId, nodeId])
   @@map("flow_nodes")
@@ -99,7 +100,7 @@ model FlowEdge {
   @@map("flow_edges")
 }
 
-model RagDocs {
+model NodeDocs {
   id        Int      @id @default(autoincrement())
   nodeId    String
   text      String
@@ -108,7 +109,19 @@ model RagDocs {
   updatedAt DateTime @updatedAt
   node      FlowNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
-  @@map("rag_docs")
+  @@map("node_docs")
+}
+
+model MinioDocs {
+  id        Int      @id @default(autoincrement())
+  projectId String
+  text      String
+  embedding String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("minio_docs")
 }
 
 model ChatHistory {

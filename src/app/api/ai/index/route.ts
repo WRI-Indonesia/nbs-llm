@@ -137,9 +137,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    // Delete all existing RAG documents for this project
+    // Delete all existing Node documents for this project
     const nodeIds = project.nodes.map((node: any) => node.id)
-    await prisma.ragDocs.deleteMany({
+    await prisma.nodeDocs.deleteMany({
       where: {
         nodeId: { in: nodeIds }
       }
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
           const tableText = generateTableRagText(tableData)
           const tableEmbedding = await generateEmbedding(tableText)
 
-          const tableRagDoc = await prisma.ragDocs.create({
+          const tableRagDoc = await prisma.nodeDocs.create({
             data: {
               nodeId: node.id,
               text: tableText,
@@ -200,8 +200,8 @@ export async function GET(request: NextRequest) {
             // Generate embedding
             const embedding = await generateEmbedding(text)
 
-            // Create new RAG document for this column
-            const ragDoc = await prisma.ragDocs.create({
+            // Create new Node document for this column
+            const ragDoc = await prisma.nodeDocs.create({
               data: {
                 nodeId: node.id,
                 text,

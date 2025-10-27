@@ -32,8 +32,8 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
  * Searches for relevant RAG documents using cosine similarity
  */
 export async function searchRagDocuments(queryEmbedding: number[], minCosine: number, topK: number) {
-  // Get all RAG documents with embeddings
-  const ragDocs = await (prisma.ragDocs.findMany as any)({
+  // Get all Node documents with embeddings
+  const ragDocs = await (prisma.nodeDocs.findMany as any)({
     where: {
       embedding: {
         not: null

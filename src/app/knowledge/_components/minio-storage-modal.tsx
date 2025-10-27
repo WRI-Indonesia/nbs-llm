@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X } from 'lucide-react'
+import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 
 interface FileItem {
@@ -26,6 +26,7 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
   const [isLoading, setIsLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [indexing, setIndexing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
   const fetchFiles = async () => {
@@ -112,6 +113,32 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
     }
   }
 
+  const handleIndex = async () => {
+    setIndexing(true)
+    try {
+      const response = await fetch('/api/storage/index')
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to index files')
+      }
+
+      const data = await response.json()
+      
+      toast.success(`Successfully indexed ${data.totalFiles} files with ${data.totalDocuments} document chunks`)
+      
+      // Show additional info
+      if (data.processedFiles) {
+        console.log('Indexed files:', data.processedFiles)
+      }
+    } catch (error) {
+      console.error('Error indexing files:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to index files')
+    } finally {
+      setIndexing(false)
+    }
+  }
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
@@ -174,7 +201,7 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
                 </div>
               </form>
 
-              {/* Upload and Refresh */}
+              {/* Upload, Index, and Refresh */}
               <div className="flex items-center gap-2">
                 <input
                   type="file"
@@ -196,6 +223,15 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
                     </span>
                   </Button>
                 </label>
+                <Button
+                  variant="default"
+                  onClick={handleIndex}
+                  disabled={indexing || uploading || isLoading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {indexing ? <Spinner className="w-4 h-4 mr-2" /> : <Database className="w-4 h-4 mr-2" />}
+                  {indexing ? 'Indexing...' : 'Index Files'}
+                </Button>
                 <Button
                   variant="outline"
                   onClick={fetchFiles}

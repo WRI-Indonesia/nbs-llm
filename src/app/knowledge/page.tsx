@@ -6,19 +6,23 @@ import {
     Background,
     Panel,
 } from '@xyflow/react'
-import { Plus, Download, Save } from 'lucide-react'
+import { Plus, Download, Save, FolderOpen } from 'lucide-react'
 import { useKnowledge } from './_hooks/useKnowledge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { LuRefreshCw } from "react-icons/lu";
 import TableNode from './_components/table-node'
+import { useState } from 'react'
+import MinioStorageModal from './_components/minio-storage-modal'
 
 
 export default function KnowledgePage() {
     const { handleDownloadSample, nodes, edges, saveProject, isLoading, isDataLoading, handleNodesChange, handleEdgesChange, addNewTable, handleRefreshIndex } = useKnowledge()
+    const [isStorageModalOpen, setIsStorageModalOpen] = useState(false)
 
     return (
         <div className="pt-14 w-screen h-screen">
+            <MinioStorageModal isOpen={isStorageModalOpen} onClose={() => setIsStorageModalOpen(false)} />
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -69,6 +73,16 @@ export default function KnowledgePage() {
                         disabled={isLoading || isDataLoading}
                     >
                         {(isLoading || isDataLoading) ? <Spinner className="w-4 h-4" /> : <LuRefreshCw className="w-4 h-4" />}
+                    </Button>
+
+                    <Button
+                        variant="secondary"
+                        color="gray"
+                        title="file storage"
+                        onClick={() => setIsStorageModalOpen(true)}
+                        disabled={isDataLoading}
+                    >
+                        {isDataLoading ? <Spinner className="w-4 h-4" /> : <FolderOpen className="w-4 h-4" />}
                     </Button>
                 </Panel>
             </ReactFlow>

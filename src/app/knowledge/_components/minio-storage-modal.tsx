@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database } from 'lucide-react'
+import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database, Square, PauseCircle, PlayCircle } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 
 interface FileItem {
@@ -28,6 +28,8 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
   const [deleting, setDeleting] = useState<string | null>(null)
   const [indexing, setIndexing] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [jobStatus, setJobStatus] = useState<any>(null)
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
   const fetchFiles = async () => {
     setIsLoading(true)
@@ -46,10 +48,74 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
     }
   }
 
+  // Fetch job status
+  const fetchJobStatus = async () => {
+    try {
+      const response = await fetch('/api/storage/index/status')
+      if (response.ok) {
+        const status = await response.json()
+        if (status.status && status.status !== 'no-job') {
+          setJobStatus(status)
+          
+          // Determine if indexing is active
+          if (status.status === 'pending' || status.status === 'processing' || status.status === 'paused') {
+            setIndexing(true)
+          } else {
+            setIndexing(false)
+          }
+          
+          if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+            // Stop polling when job is done
+            if (pollingInterval) {
+              clearInterval(pollingInterval)
+              setPollingInterval(null)
+            }
+            setIndexing(false)
+            
+            if (status.status === 'completed') {
+              toast.success(`Indexing completed: ${status.totalDocuments} document chunks created`)
+            } else if (status.status === 'failed') {
+              toast.error(`Indexing failed: ${status.error || 'Unknown error'}`)
+            } else if (status.status === 'cancelled') {
+              toast.info('Indexing job cancelled')
+            }
+          }
+        } else {
+          // No job found
+          setJobStatus(null)
+          setIndexing(false)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching job status:', error)
+      setJobStatus(null)
+      setIndexing(false)
+    }
+  }
+
   useEffect(() => {
     if (isOpen) {
       fetchFiles()
       setSearchTerm('')
+      
+      // Fetch status immediately when modal opens
+      fetchJobStatus()
+      
+      // Start polling for job status (only for active jobs)
+      const interval = setInterval(fetchJobStatus, 2000)
+      setPollingInterval(interval)
+      
+      return () => {
+        clearInterval(interval)
+      }
+    } else {
+      // Clear polling when modal closes
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+        setPollingInterval(null)
+      }
+      setJobStatus(null)
+      setIndexing(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
@@ -120,22 +186,52 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
       
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Failed to index files')
+        throw new Error(error.error || 'Failed to queue indexing job')
       }
 
       const data = await response.json()
       
-      toast.success(`Successfully indexed ${data.totalFiles} files with ${data.totalDocuments} document chunks`)
-      
-      // Show additional info
-      if (data.processedFiles) {
-        console.log('Indexed files:', data.processedFiles)
+      if (data.jobId) {
+        toast.success(`Indexing job queued! Processing ${data.totalFiles} PDF files...`)
+        setJobStatus({ status: 'pending', ...data })
       }
     } catch (error) {
       console.error('Error indexing files:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to index files')
-    } finally {
       setIndexing(false)
+    }
+  }
+
+  const handleControl = async (action: 'pause' | 'resume' | 'cancel') => {
+    if (!jobStatus?.id) return
+
+    try {
+      const response = await fetch(`/api/storage/index/control?jobId=${jobStatus.id}&action=${action}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to control job')
+      }
+
+      const data = await response.json()
+      
+      if (action === 'cancel') {
+        toast.success('Indexing job cancelled')
+        setJobStatus(null)
+        setIndexing(false)
+      } else if (action === 'pause') {
+        toast.success('Indexing job paused')
+      } else if (action === 'resume') {
+        toast.success('Indexing job resumed')
+      }
+      
+      // Fetch updated status
+      setTimeout(() => fetchJobStatus(), 500)
+    } catch (error) {
+      console.error('Error controlling job:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to control job')
     }
   }
 
@@ -225,12 +321,26 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
                 </label>
                 <Button
                   variant="default"
-                  onClick={handleIndex}
-                  disabled={indexing || uploading || isLoading}
+                  onClick={jobStatus?.status === 'paused' ? () => handleControl('resume') : handleIndex}
+                  disabled={indexing || uploading || isLoading || (jobStatus?.status === 'processing')}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
-                  {indexing ? <Spinner className="w-4 h-4 mr-2" /> : <Database className="w-4 h-4 mr-2" />}
-                  {indexing ? 'Indexing...' : 'Index Files'}
+                  {jobStatus?.status === 'paused' ? (
+                    <>
+                      <PlayCircle className="w-4 h-4 mr-2" />
+                      Resume
+                    </>
+                  ) : (indexing || jobStatus?.status === 'processing') ? (
+                    <>
+                      <Spinner className="w-4 h-4 mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="w-4 h-4 mr-2" />
+                      Index Files
+                    </>
+                  )}
                 </Button>
                 <Button
                   variant="outline"
@@ -241,6 +351,68 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
                 </Button>
               </div>
             </div>
+
+            {/* Job Progress Indicator */}
+            {jobStatus && (jobStatus.status === 'pending' || jobStatus.status === 'processing' || jobStatus.status === 'paused') && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-blue-900">
+                      {jobStatus.status === 'paused' ? 'Indexing paused' : 'Indexing in progress...'}
+                    </span>
+                    <div className="flex gap-2">
+                      {jobStatus.status === 'paused' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleControl('resume')}
+                          className="bg-green-50 hover:bg-green-100 border-green-300 text-green-700"
+                        >
+                          <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Resume
+                        </Button>
+                      )}
+                      {(jobStatus.status === 'processing' || jobStatus.status === 'pending') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleControl('pause')}
+                          className="bg-yellow-50 hover:bg-yellow-100 border-yellow-300 text-yellow-700"
+                        >
+                          <PauseCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Pause
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleControl('cancel')}
+                        className="bg-red-50 hover:bg-red-100 border-red-300 text-red-700"
+                      >
+                        <Square className="w-3.5 h-3.5 mr-1.5" />
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                  <span className="text-sm text-blue-700">
+                    {jobStatus.processedFiles || 0} of {jobStatus.totalFiles || 0} files
+                  </span>
+                </div>
+                {jobStatus.totalFiles > 0 && (
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${((jobStatus.processedFiles || 0) / jobStatus.totalFiles) * 100}%` }}
+                    />
+                  </div>
+                )}
+                {jobStatus.totalDocuments > 0 && (
+                  <p className="text-xs text-blue-600 mt-2">
+                    Created {jobStatus.totalDocuments} document chunks
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Table */}
             <div className="flex-1 overflow-auto border rounded-lg min-h-0">

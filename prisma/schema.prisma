@@ -55,14 +55,15 @@ model VerificationToken {
 }
 
 model FlowProject {
-  id          String     @id @default(cuid())
-  name        String     @default("Main Project")
-  description String?    @default("Main knowledge flow project")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  edges       FlowEdge[]
-  nodes       FlowNode[]
-  MinioDocs   MinioDocs[]
+  id           String         @id @default(cuid())
+  name         String         @default("Main Project")
+  description  String?        @default("Main knowledge flow project")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  edges        FlowEdge[]
+  nodes        FlowNode[]
+  MinioDocs    MinioDocs[]
+  indexingJobs IndexingJob[]
 
   @@map("flow_projects")
 }
@@ -115,6 +116,7 @@ model NodeDocs {
 model MinioDocs {
   id        Int      @id @default(autoincrement())
   projectId String
+  fileName  String? @default("")
   text      String
   embedding String?
   createdAt DateTime @default(now())
@@ -122,6 +124,25 @@ model MinioDocs {
   project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("minio_docs")
+}
+
+model IndexingJob {
+  id             String    @id @default(cuid())
+  projectId      String
+  status         String    @default("pending") // pending, processing, paused, completed, failed, cancelled
+  totalFiles     Int       @default(0)
+  processedFiles Int       @default(0)
+  successfulFiles Int      @default(0)
+  failedFiles    Int       @default(0)
+  totalDocuments Int       @default(0)
+  error          String?
+  startedAt      DateTime  @default(now())
+  completedAt     DateTime?
+  startedBy      String    // user who started it
+  processedFileNames Json?  @default("[]") // Track which files have been processed for pause/resume
+  project        FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("indexing_jobs")
 }
 
 model ChatHistory {

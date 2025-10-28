@@ -2,6 +2,7 @@ import { Worker, Job, QueueEvents } from 'bullmq'
 import type { IndexJobData } from '@/lib/queue'
 import { redisConnectionOptions } from '@/lib/queue'
 import { processIndexingJob } from '@/lib/document-processor'
+import { createIndexingLogger } from '@/lib/indexing-logger'
 
 /**
  * A simple worker that pulls `process-indexing` jobs and calls
@@ -61,12 +62,16 @@ export const indexWorker = new Worker<IndexJobData>(
       }
     }
 
+    // Create logger for this job
+    const logger = createIndexingLogger(jobId)
+
     // Call the core processing function. Let it handle DB status changes.
     try {
       return await processIndexingJob({
         jobId,
         projectId,
         onProgress,
+        logger,
       })
     } finally {
       // Restore original console after job finishes

@@ -1,14 +1,20 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
+import useSWR, { mutate } from 'swr'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogPortal } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database, Square, PauseCircle, PlayCircle } from 'lucide-react'
+import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database, PlayCircle, Settings, FileText, AlertCircle } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
+import { Label } from '@/components/ui/label'
 
+// --------------------
+// Types
+// --------------------
 interface FileItem {
   name: string
   size: number
@@ -16,164 +22,131 @@ interface FileItem {
   etag: string
 }
 
+interface LogEntry {
+  id: string
+  level: string
+  message: string
+  timestamp: string
+}
+
 interface MinioStorageModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModalProps) {
-  const [files, setFiles] = useState<FileItem[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+// --------------------
+// Fetcher for useSWR
+// --------------------
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    const err = new Error(error?.error || 'Failed to fetch') as any
+    err.info = error
+    throw err
+  }
+  return res.json()
+}
+
+// --------------------
+// Small UI helpers
+// --------------------
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+const getFileName = (fullPath: string) => fullPath.split('/').pop() || fullPath
+
+const getLogIcon = (level: string) => {
+  switch (level) {
+    case 'error':
+      return <AlertCircle className="h-4 w-4 text-red-500" />
+    case 'warn':
+      return <AlertCircle className="h-4 w-4 text-yellow-500" />
+    case 'info':
+      return <FileText className="h-4 w-4 text-blue-500" />
+    default:
+      return <FileText className="h-4 w-4 text-gray-500" />
+  }
+}
+
+const getLogBadgeColor = (level: string) => {
+  switch (level) {
+    case 'error':
+      return 'bg-red-100 text-red-800 border-red-300'
+    case 'warn':
+      return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+    case 'info':
+      return 'bg-blue-100 text-blue-800 border-blue-300'
+    default:
+      return 'bg-gray-100 text-gray-800 border-gray-300'
+  }
+}
+
+// --------------------
+// Files Tab (separated)
+// --------------------
+function FilesTab({
+  files,
+  isLoading,
+  mutateFiles,
+  jobStatus,
+}: {
+  files: FileItem[] | undefined
+  isLoading: boolean
+  mutateFiles: () => void
+  jobStatus: any
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [indexing, setIndexing] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [jobStatus, setJobStatus] = useState<any>(null)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
 
-  const fetchFiles = async () => {
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/storage')
-      if (!response.ok) {
-        throw new Error('Failed to fetch files')
-      }
-      const data = await response.json()
-      setFiles(data.files || [])
-    } catch (error) {
-      console.error('Error fetching files:', error)
-      toast.error('Failed to load files')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const filteredFiles = useMemo(() => {
+    if (!files) return []
+    if (!searchTerm.trim()) return files
+    const q = searchTerm.toLowerCase()
+    return files.filter(f => getFileName(f.name).toLowerCase().includes(q))
+  }, [files, searchTerm])
 
-  // Fetch job status
-  const fetchJobStatus = async () => {
-    try {
-      const response = await fetch('/api/storage/index/status')
-      if (response.ok) {
-        const status = await response.json()
-        if (status.status && status.status !== 'no-job') {
-          setJobStatus(status)
-          
-          // Determine if indexing is active
-          if (status.status === 'pending' || status.status === 'processing' || status.status === 'paused') {
-            setIndexing(true)
-          } else {
-            setIndexing(false)
-          }
-          
-          if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
-            // Stop polling when job is done
-            if (pollingInterval) {
-              clearInterval(pollingInterval)
-              setPollingInterval(null)
-            }
-            setIndexing(false)
-            
-            if (status.status === 'completed') {
-              toast.success(`Indexing completed: ${status.totalDocuments} document chunks created`)
-            } else if (status.status === 'failed') {
-              toast.error(`Indexing failed: ${status.error || 'Unknown error'}`)
-            } else if (status.status === 'cancelled') {
-              toast.info('Indexing job cancelled')
-            }
-          }
-        } else {
-          // No job found
-          setJobStatus(null)
-          setIndexing(false)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching job status:', error)
-      setJobStatus(null)
-      setIndexing(false)
-    }
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchFiles()
-      setSearchTerm('')
-      
-      // Fetch status immediately when modal opens
-      fetchJobStatus()
-      
-      // Start polling for job status (only for active jobs)
-      const interval = setInterval(fetchJobStatus, 10000)
-      setPollingInterval(interval)
-      
-      return () => {
-        clearInterval(interval)
-      }
-    } else {
-      // Clear polling when modal closes
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-        setPollingInterval(null)
-      }
-      setJobStatus(null)
-      setIndexing(false)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
-
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (!file) return
-
-    // Validate file type
     if (file.type !== 'application/pdf') {
-      toast.error('Please select a PDF file')
-      event.target.value = ''
+      toast.error('Please select a PDF')
+      e.target.value = ''
       return
     }
-
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('/api/storage', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to upload file')
-      }
-
-      toast.success('File uploaded successfully')
-      fetchFiles()
-    } catch (error) {
-      console.error('Error uploading file:', error)
-      toast.error('Failed to upload file')
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/storage', { method: 'POST', body: fd })
+      if (!res.ok) throw new Error('Upload failed')
+      toast.success('Uploaded')
+      mutateFiles()
+    } catch (err) {
+      console.error(err)
+      toast.error((err as Error).message || 'Upload failed')
     } finally {
       setUploading(false)
-      event.target.value = ''
+      e.target.value = ''
     }
   }
 
   const handleDelete = async (fileName: string) => {
-    if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return
-
+    if (!confirm(`Delete "${fileName}"?`)) return
     setDeleting(fileName)
     try {
-      const response = await fetch(`/api/storage?fileName=${encodeURIComponent(fileName)}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete file')
-      }
-
-      toast.success('File deleted successfully')
-      fetchFiles()
-    } catch (error) {
-      console.error('Error deleting file:', error)
-      toast.error('Failed to delete file')
+      const res = await fetch(`/api/storage?fileName=${encodeURIComponent(fileName)}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      toast.success('Deleted')
+      mutateFiles()
+    } catch (err) {
+      console.error(err)
+      toast.error((err as Error).message || 'Delete failed')
     } finally {
       setDeleting(null)
     }
@@ -182,308 +155,306 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
   const handleIndex = async () => {
     setIndexing(true)
     try {
-      const response = await fetch('/api/storage/index')
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to queue indexing job')
+      const res = await fetch('/api/storage/index')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to index')
       }
-
-      const data = await response.json()
-      
-      if (data.jobId) {
-        toast.success(`Indexing job queued! Processing ${data.totalFiles} PDF files...`)
-        setJobStatus({ status: 'pending', ...data })
-      }
-    } catch (error) {
-      console.error('Error indexing files:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to index files')
+      await res.json()
+      toast.success('Index job queued')
+      // Revalidate job status
+      mutate('/api/storage/index/status')
+    } catch (err) {
+      console.error(err)
+      toast.error((err as Error).message || 'Failed to index')
+    } finally {
       setIndexing(false)
     }
   }
 
-  const handleControl = async (action: 'pause' | 'resume' | 'cancel') => {
-    if (!jobStatus?.id) return
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <form className="flex items-center gap-2 flex-1 max-w-xl" onSubmit={(e) => e.preventDefault()}>
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search files..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 pr-8" />
+            {searchTerm && (
+              <button type="button" onClick={() => setSearchTerm('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted"><X className="h-4 w-4 text-muted-foreground" /></button>
+            )}
+          </div>
+        </form>
 
+        <div className="flex items-center gap-2">
+          <input type="file" id="file-upload" className="hidden" accept=".pdf,application/pdf" onChange={handleUpload} disabled={uploading} />
+          <label htmlFor="file-upload">
+            <Button variant="outline" disabled={uploading} asChild>
+              <span>{uploading ? <Spinner className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}{uploading ? 'Uploading...' : 'Upload PDF'}</span>
+            </Button>
+          </label>
+
+          <Button variant="default" onClick={jobStatus?.status === 'paused' ? () => mutate('/api/storage/index/control?jobId=' + jobStatus.id + '&action=resume') : handleIndex} disabled={indexing || uploading || isLoading}>
+            {jobStatus?.status === 'paused' ? (<><PlayCircle className="w-4 h-4 mr-2" />Resume</>) : (indexing || jobStatus?.status === 'processing') ? (<><Spinner className="w-4 h-4 mr-2" />Processing...</>) : (<><Database className="w-4 h-4 mr-2" />Index Files</>)}
+          </Button>
+
+          <Button variant="outline" onClick={() => mutateFiles()} disabled={isLoading}>
+            {isLoading ? <Spinner className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto border rounded-lg min-h-0">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center h-64"><Spinner className="w-8 h-8" /><p className="mt-4 text-sm text-muted-foreground">Loading files...</p></div>
+        ) : (!files || filteredFiles.length === 0) ? (
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <File className="h-12 w-12 mb-4 text-muted-foreground/50" />
+            <p className="text-lg font-medium">{searchTerm ? 'No files found' : 'No files'}</p>
+            <p className="text-sm">{searchTerm ? 'Try adjusting your search' : 'Upload a file to get started'}</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader className="bg-slate-50">
+              <TableRow>
+                <TableHead className="w-12">Icon</TableHead>
+                <TableHead>File Name</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Last Modified</TableHead>
+                <TableHead className="text-right w-20">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredFiles.map(file => (
+                <TableRow key={file.name} className="hover:bg-slate-50/30">
+                  <TableCell><div className='flex items-center justify-center'><File className="w-4 h-4 text-blue-600" /></div></TableCell>
+                  <TableCell className="font-medium max-w-[300px] truncate">{getFileName(file.name)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{formatFileSize(file.size)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{file.lastModified ? new Date(file.lastModified).toLocaleDateString() : 'N/A'}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" onClick={() => handleDelete(file.name)} disabled={deleting === file.name}>{deleting === file.name ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 text-red-500" />}</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t flex-shrink-0 text-sm text-muted-foreground">
+        <span>{(files || []).length} {(files || []).length === 1 ? 'file' : 'files'}{searchTerm && ` (filtered from ${(files || []).length})`}</span>
+      </div>
+    </div>
+  )
+}
+
+// --------------------
+// Config Tab (separated)
+// --------------------
+function ConfigTab({ chunkSize, overlap, setChunkSize, setOverlap }: any) {
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
     try {
-      const response = await fetch(`/api/storage/index/control?jobId=${jobStatus.id}&action=${action}`, {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to control job')
-      }
-
-      const data = await response.json()
-      
-      if (action === 'cancel') {
-        toast.success('Indexing job cancelled')
-        setJobStatus(null)
-        setIndexing(false)
-      } else if (action === 'pause') {
-        toast.success('Indexing job paused')
-      } else if (action === 'resume') {
-        toast.success('Indexing job resumed')
-      }
-      
-      // Fetch updated status
-      setTimeout(() => fetchJobStatus(), 500)
-    } catch (error) {
-      console.error('Error controlling job:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to control job')
+      const res = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chunkSize, overlap }) })
+      if (!res.ok) throw new Error('Failed to save')
+      await res.json()
+      toast.success('Configuration saved')
+      // revalidate server config
+      mutate('/api/config')
+    } catch (err) {
+      console.error(err)
+      toast.error((err as Error).message || 'Save failed')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
-  }
+  return (
+    <div className="border rounded-lg p-6 bg-slate-50/50">
+      <h3 className="text-lg font-semibold mb-4">Chunking Configuration</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="chunkSize">Chunk size (characters)</Label>
+          <input id="chunkSize" type="range" min={200} max={8000} step={100} value={chunkSize} onChange={(e) => setChunkSize(parseInt(e.target.value))} />
+          <div className="text-sm text-muted-foreground">Current: <span className="font-medium">{chunkSize} characters</span></div>
+          <p className="text-xs text-muted-foreground">The size of text chunks to split documents into. Larger chunks capture more context but may lose fine-grained details.</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="overlap">Overlap (characters)</Label>
+          <input id="overlap" type="range" min={0} max={Math.max(0, Math.min(chunkSize - 1, 4000))} step={50} value={overlap} onChange={(e) => setOverlap(parseInt(e.target.value))} />
+          <div className="text-sm text-muted-foreground">Current: <span className="font-medium">{overlap} characters</span></div>
+          <p className="text-xs text-muted-foreground">The number of characters to overlap between consecutive chunks. Helps maintain context across chunk boundaries.</p>
+        </div>
+      </div>
+      <div className="mt-6 flex justify-end">
+        <Button onClick={handleSave} disabled={saving}>{saving ? <Spinner className="w-4 h-4 mr-2" /> : <Settings className="w-4 h-4 mr-2" />}{saving ? 'Saving...' : 'Save Configuration'}</Button>
+      </div>
+    </div>
+  )
+}
 
-  // Extract just filename from full path
-  const getFileName = (fullPath: string) => {
-    return fullPath.split('/').pop() || fullPath
-  }
+// --------------------
+// Logs Tab
+// --------------------
+function LogsTab({ jobStatus }: { jobStatus: any }) {
+  // useSWR with dynamic key and refresh while logs tab is active
+  const { data, isValidating } = useSWR(
+    () => (jobStatus?.id ? `/api/storage/index/logs?jobId=${jobStatus.id}` : null),
+    fetcher,
+    { refreshInterval: jobStatus?.id ? 10000 : 0 }
+  )
 
-  // Filter files based on search
-  const filteredFiles = useMemo(() => {
-    if (!searchTerm.trim()) return files
-    const query = searchTerm.toLowerCase()
-    return files.filter(file => 
-      getFileName(file.name).toLowerCase().includes(query)
+  const logs: LogEntry[] = data?.logs || []
+
+  if (!jobStatus) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+        <FileText className="h-12 w-12 mb-4 text-muted-foreground/50" />
+        <p className="text-lg font-medium">No indexing job found</p>
+        <p className="text-sm">Start an indexing job to see logs</p>
+      </div>
     )
-  }, [files, searchTerm])
+  }
+
+  if (isValidating && logs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64"><Spinner className="w-8 h-8" /><p className="mt-4 text-sm text-muted-foreground">Loading logs...</p></div>
+    )
+  }
+
+  if (logs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+        <FileText className="h-12 w-12 mb-4 text-muted-foreground/50" />
+        <p className="text-lg font-medium">No logs available</p>
+        <p className="text-sm">Logs will appear here when indexing starts</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 overflow-auto border rounded-lg min-h-0 bg-slate-50">
+      <div className="p-4 space-y-2">
+        {logs.map((log) => (
+          <div key={log.id} className="flex items-start gap-3 p-3 bg-white rounded border hover:bg-slate-50 transition-colors">
+            <div className="flex-shrink-0 mt-0.5">{getLogIcon(log.level)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`text-xs px-2 py-0.5 rounded border ${getLogBadgeColor(log.level)}`}>{log.level.toUpperCase()}</span>
+                <span className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</span>
+              </div>
+              <p className="text-sm break-words">{log.message}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// --------------------
+// Job Progress Component
+// --------------------
+function JobProgress({ jobStatus }: { jobStatus: any }) {
+  if (!jobStatus) return null
+  if (!['pending', 'processing', 'paused'].includes(jobStatus.status)) return null
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-blue-900">{jobStatus.status === 'paused' ? 'Indexing paused' : 'Indexing in progress...'}</span>
+        </div>
+        <span className="text-sm text-blue-700">{jobStatus.processedFiles || 0} of {jobStatus.totalFiles || 0} files</span>
+      </div>
+
+      {jobStatus.totalFiles > 0 && (
+        <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+          <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${((jobStatus.processedFiles || 0) / jobStatus.totalFiles) * 100}%` }} />
+        </div>
+      )}
+
+      {jobStatus.totalDocuments > 0 && (
+        <p className="text-xs text-blue-600">Created {jobStatus.totalDocuments} document chunks</p>
+      )}
+    </div>
+  )
+}
+
+// --------------------
+// Main Modal (wires everything together)
+// --------------------
+export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModalProps) {
+  const [activeTab, setActiveTab] = useState('files')
+
+  // Files list with SWR
+  const { data: filesData, error: filesError } = useSWR('/api/storage', fetcher)
+
+  // Config
+  const { data: configData } = useSWR('/api/config', fetcher)
+  const chunkSize = configData?.chunkSize ?? 1000
+  const overlap = configData?.overlap ?? 200
+  const [localChunkSize, setLocalChunkSize] = useState(chunkSize)
+  const [localOverlap, setLocalOverlap] = useState(overlap)
+
+  // Job status with polling while there's an active job
+  const { data: jobData } = useSWR('/api/storage/index/status', fetcher, {
+    refreshInterval: (data) => {
+      if (!data) return 0
+      // poll when job exists and is active
+      return ['pending', 'processing', 'paused'].includes(data.status) ? 10000 : 0
+    }
+  })
+
+  const jobStatus = jobData
+
+  // Helper to revalidate files list
+  const mutateFiles = useCallback(() => mutate('/api/storage'), [])
+
+  // ensure local config sync when server data loads
+  React.useEffect(() => {
+    if (configData) {
+      setLocalChunkSize(configData.chunkSize ?? localChunkSize)
+      setLocalOverlap(configData.overlap ?? localOverlap)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configData])
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogPortal>
-        <DialogContent className="sm:max-w-[60vw] max-w-90vw max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-[80vw] max-w-[90vw] max-h-[90vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="space-y-3 p-6 pb-4 border-b flex-shrink-0">
-            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-              <FolderOpen className="h-6 w-6 text-blue-600" />
-              File Storage Management
-            </DialogTitle>
-            <DialogDescription>
-              Manage your files in MinIO storage bucket
-            </DialogDescription>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2"><FolderOpen className="h-6 w-6 text-blue-600" />File Storage Management</DialogTitle>
+            <DialogDescription>Manage your files, configuration, and indexing logs in MinIO storage</DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col flex-1 overflow-hidden p-6 pt-4 gap-4">
-            {/* Action Bar */}
-            <div className="flex items-center justify-between gap-4 flex-shrink-0">
-              {/* Search */}
-              <form
-                className="flex items-center gap-2 flex-1 max-w-xl"
-                onSubmit={(e) => e.preventDefault()}
-              >
-                <div className="relative w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search files..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 pr-8"
-                  />
-                  {searchTerm && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchTerm('')}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted"
-                    >
-                      <X className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  )}
-                </div>
-              </form>
+          <div className="flex flex-col flex-1 overflow-hidden px-6 pt-4 gap-4 pb-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 overflow-hidden">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="files" className="flex items-center gap-2"><File className="h-4 w-4" />Files</TabsTrigger>
+                <TabsTrigger value="config" className="flex items-center gap-2"><Settings className="h-4 w-4" />Configuration</TabsTrigger>
+                <TabsTrigger value="logs" className="flex items-center gap-2"><FileText className="h-4 w-4" />Indexing Logs</TabsTrigger>
+              </TabsList>
 
-              {/* Upload, Index, and Refresh */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  id="file-upload"
-                  className="hidden"
-                  accept=".pdf,application/pdf"
-                  onChange={handleUpload}
-                  disabled={uploading}
-                />
-                <label htmlFor="file-upload">
-                  <Button
-                    variant="outline"
-                    disabled={uploading}
-                    asChild
-                  >
-                    <span>
-                      {uploading ? <Spinner className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
-                      {uploading ? 'Uploading...' : 'Upload PDF'}
-                    </span>
-                  </Button>
-                </label>
-                <Button
-                  variant="default"
-                  onClick={jobStatus?.status === 'paused' ? () => handleControl('resume') : handleIndex}
-                  disabled={indexing || uploading || isLoading || (jobStatus?.status === 'processing')}
-                >
-                  {jobStatus?.status === 'paused' ? (
-                    <>
-                      <PlayCircle className="w-4 h-4 mr-2" />
-                      Resume
-                    </>
-                  ) : (indexing || jobStatus?.status === 'processing') ? (
-                    <>
-                      <Spinner className="w-4 h-4 mr-2" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Database className="w-4 h-4 mr-2" />
-                      Index Files
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={fetchFiles}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Spinner className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
-                </Button>
-              </div>
-            </div>
+              <TabsContent value="files" className="flex flex-col flex-1 overflow-hidden mt-4">
+                <JobProgress jobStatus={jobStatus} />
+                <FilesTab files={filesData?.files} isLoading={!filesData && !filesError} mutateFiles={mutateFiles} jobStatus={jobStatus} />
+              </TabsContent>
 
-            {/* Job Progress Indicator */}
-            {jobStatus && (jobStatus.status === 'pending' || jobStatus.status === 'processing' || jobStatus.status === 'paused') && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-blue-900">
-                      {jobStatus.status === 'paused' ? 'Indexing paused' : 'Indexing in progress...'}
-                    </span>
-                    <div className="flex gap-2">
-                      {jobStatus.status === 'paused' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleControl('resume')}
-                          className="bg-green-50 hover:bg-green-100 border-green-300 text-green-700"
-                        >
-                          <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
-                          Resume
-                        </Button>
-                      )}
-                      {(jobStatus.status === 'processing' || jobStatus.status === 'pending') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleControl('pause')}
-                          className="bg-yellow-50 hover:bg-yellow-100 border-yellow-300 text-yellow-700"
-                        >
-                          <PauseCircle className="w-3.5 h-3.5 mr-1.5" />
-                          Pause
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleControl('cancel')}
-                        className="bg-red-50 hover:bg-red-100 border-red-300 text-red-700"
-                      >
-                        <Square className="w-3.5 h-3.5 mr-1.5" />
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                  <span className="text-sm text-blue-700">
-                    {jobStatus.processedFiles || 0} of {jobStatus.totalFiles || 0} files
-                  </span>
-                </div>
-                {jobStatus.totalFiles > 0 && (
-                  <div className="w-full bg-blue-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${((jobStatus.processedFiles || 0) / jobStatus.totalFiles) * 100}%` }}
-                    />
-                  </div>
-                )}
-                {jobStatus.totalDocuments > 0 && (
-                  <p className="text-xs text-blue-600 mt-2">
-                    Created {jobStatus.totalDocuments} document chunks
-                  </p>
-                )}
-              </div>
-            )}
+              <TabsContent value="config" className="flex flex-col flex-1 overflow-hidden mt-4">
+                <ConfigTab chunkSize={localChunkSize} overlap={localOverlap} setChunkSize={setLocalChunkSize} setOverlap={setLocalOverlap} />
+              </TabsContent>
 
-            {/* Table */}
-            <div className="flex-1 overflow-auto border rounded-lg min-h-0">
-              {isLoading ? (
-                <div className="flex flex-col items-center justify-center h-64">
-                  <Spinner className="w-8 h-8" />
-                  <p className="mt-4 text-sm text-muted-foreground">Loading files...</p>
+              <TabsContent value="logs" className="flex flex-col flex-1 overflow-hidden mt-4">
+                <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                  <div className="flex items-center gap-2"><h3 className="text-lg font-semibold">Indexing Logs</h3>{jobStatus && <span className="text-sm text-muted-foreground">Job: {jobStatus.id}</span>}</div>
                 </div>
-              ) : filteredFiles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-                  <File className="h-12 w-12 mb-4 text-muted-foreground/50" />
-                  <p className="text-lg font-medium">
-                    {searchTerm ? 'No files found' : 'No files'}
-                  </p>
-                  <p className="text-sm">
-                    {searchTerm ? 'Try adjusting your search' : 'Upload a file to get started'}
-                  </p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead className="w-12">Icon</TableHead>
-                      <TableHead>File Name</TableHead>
-                      <TableHead>Size</TableHead>
-                      <TableHead>Last Modified</TableHead>
-                      <TableHead className="text-right w-20">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredFiles.map((file) => (
-                      <TableRow key={file.name} className="hover:bg-slate-50/30">
-                        <TableCell>
-                          <div className='flex items-center justify-center'>
-                          <File className="w-4 h-4 text-blue-600" />
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium max-w-[300px] truncate">{getFileName(file.name)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{formatFileSize(file.size)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {file.lastModified
-                            ? new Date(file.lastModified).toLocaleDateString()
-                            : 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(file.name)}
-                            disabled={deleting === file.name}
-                          >
-                            {deleting === file.name ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            )}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
 
-            {/* Stats */}
-            <div className="flex items-center justify-between pt-2 border-t flex-shrink-0 text-sm text-muted-foreground">
-              <span>
-                {filteredFiles.length} {filteredFiles.length === 1 ? 'file' : 'files'}
-                {searchTerm && ` (filtered from ${files.length})`}
-              </span>
-            </div>
+                <LogsTab jobStatus={jobStatus} />
+              </TabsContent>
+            </Tabs>
           </div>
         </DialogContent>
       </DialogPortal>

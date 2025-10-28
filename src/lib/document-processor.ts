@@ -2,6 +2,7 @@ import { PDFReader } from '@llamaindex/readers/pdf'
 import { OpenAIEmbedding } from '@llamaindex/openai'
 import { prisma } from './prisma'
 import { getMinioClient, initBucket } from './minio'
+import { createIndexingLogger } from './indexing-logger'
 
 const BUCKET_NAME = process.env.MINIO_BUCKET || ''
 const DEFAULT_PREFIX = process.env.MINIO_STORAGE_PREFIX || ''
@@ -18,6 +19,27 @@ export interface ProcessJobOptions {
   jobId: string
   projectId: string
   onProgress?: (progress: ProcessingProgress) => Promise<void>
+  logger?: ReturnType<typeof createIndexingLogger>
+}
+
+interface ChunkingConfig {
+  chunkSize: number
+  overlap: number
+}
+
+function chunkText(text: string, { chunkSize, overlap }: ChunkingConfig): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return []
+
+  const chunks: string[] = []
+  const step = Math.max(1, chunkSize - Math.max(0, overlap))
+  for (let start = 0; start < normalized.length; start += step) {
+    const end = Math.min(normalized.length, start + chunkSize)
+    const slice = normalized.slice(start, end)
+    if (slice.length > 0) chunks.push(slice)
+    if (end >= normalized.length) break
+  }
+  return chunks
 }
 
 /**
@@ -25,7 +47,8 @@ export interface ProcessJobOptions {
  */
 async function processPDFFile(
   fileName: string,
-  projectId: string
+  projectId: string,
+  chunking: ChunkingConfig
 ): Promise<number> {
   const minioClient = getMinioClient()
 
@@ -58,21 +81,23 @@ async function processPDFFile(
     // Extract just the filename from the full path
     const fileNameOnly = fileName.split('/').pop() || fileName
 
-    // Generate embedding using OpenAI
-    const embedding = await embeddingModel.getTextEmbedding(text)
-    const embeddingJson = JSON.stringify(embedding)
+    const textChunks = chunkText(text, chunking)
+    for (const chunk of textChunks) {
+      // Generate embedding using OpenAI
+      const embedding = await embeddingModel.getTextEmbedding(chunk)
+      const embeddingJson = JSON.stringify(embedding)
 
-    // Store in database
-    await prisma.minioDocs.create({
-      data: {
-        projectId,
-        fileName: fileNameOnly,
-        text,
-        embedding: embeddingJson,
-      },
-    })
-
-    documentCount++
+      // Store in database
+      await prisma.minioDocs.create({
+        data: {
+          projectId,
+          fileName: fileNameOnly,
+          text: chunk,
+          embedding: embeddingJson,
+        },
+      })
+      documentCount++
+    }
   }
 
   return documentCount
@@ -139,7 +164,10 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
   cancelled?: boolean
   paused?: boolean
 }> {
-  const { jobId, projectId, onProgress } = options
+  const { jobId, projectId, onProgress, logger } = options
+
+  // Use provided logger or create default one
+  const log = logger || createIndexingLogger(jobId)
 
   try {
     // Check if job exists and update job status to processing
@@ -156,17 +184,25 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       data: { status: 'processing' },
     })
 
-    console.log(`\n🎯 Starting indexing job...`)
-    console.log(`   Job ID: ${jobId}`)
-    console.log(`   Project ID: ${projectId}`)
-    console.log(`   Status: processing\n`)
+    await log.info(`Starting indexing job`)
+    await log.info(`Job ID: ${jobId}`)
+    await log.info(`Project ID: ${projectId}`)
+    await log.info(`Status: processing`)
+
+    // Load user chunking config
+    const userId = existingJob.startedBy
+    const userConfig = await (prisma as any).config?.findUnique({ where: { userId } }).catch(() => null)
+    const chunking: ChunkingConfig = {
+      chunkSize: Math.max(200, Math.min(8000, userConfig?.chunkSize ?? 1000)),
+      overlap: Math.max(0, Math.min(4000, userConfig?.overlap ?? 200)),
+    }
 
     // Delete existing MinioDocs for this project
     await prisma.minioDocs.deleteMany({
       where: { projectId },
     })
 
-    console.log(`🗑️  Deleted existing MinioDocs for project ${projectId}`)
+    await log.info(`Deleted existing MinioDocs for project ${projectId}`)
 
     // Initialize MinIO and get client
     await initBucket(BUCKET_NAME)
@@ -181,7 +217,7 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
 
       const fileExtension = obj.name?.split('.').pop()?.toLowerCase()
       if (fileExtension !== 'pdf') {
-        console.log(`⏭️  Skipping non-PDF file: ${obj.name}`)
+        await log.log(`Skipping non-PDF file: ${obj.name}`)
         continue
       }
 
@@ -191,10 +227,8 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       })
     }
 
-    console.log(`\n📁 Found ${objectsList.length} PDF files in MinIO`)
-    console.log(`\n${'='.repeat(60)}`)
-    console.log(`STARTING INDEXING PROCESS`)
-    console.log(`${'='.repeat(60)}\n`)
+    await log.info(`Found ${objectsList.length} PDF files in MinIO`)
+    await log.info(`STARTING INDEXING PROCESS`)
 
     // Update total files count
     await prisma.indexingJob.update({
@@ -221,9 +255,9 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     
     // If resuming a paused job, show that info
     if (processedFiles > 0) {
-      console.log(`\n▶️  RESUMING job from paused state...`)
-      console.log(`   Already processed: ${processedFiles} files`)
-      console.log(`   Documents indexed so far: ${totalDocuments}\n`)
+      await log.info(`RESUMING job from paused state`)
+      await log.info(`Already processed: ${processedFiles} files`)
+      await log.info(`Documents indexed so far: ${totalDocuments}`)
     }
 
     // Process each file
@@ -238,36 +272,34 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       })
 
       if (jobCheck?.status === 'cancelled') {
-        console.log(`\n🛑 JOB CANCELLED by user`)
-        console.log(`   Job ID: ${jobId}`)
-        console.log(`   Processed: ${processedFiles}/${objectsList.length} files`)
-        console.log(`   Documents indexed: ${totalDocuments}`)
-        console.log(`   Stopped at: ${new Date().toISOString()}\n`)
+        await log.warn(`JOB CANCELLED by user`)
+        await log.warn(`Processed: ${processedFiles}/${objectsList.length} files`)
+        await log.warn(`Documents indexed: ${totalDocuments}`)
+        await log.warn(`Stopped at: ${new Date().toISOString()}`)
         return { success: false, cancelled: true, totalFiles: objectsList.length, totalDocuments }
       }
 
       if (jobCheck?.status === 'paused') {
-        console.log(`\n⏸️  JOB PAUSED by user`)
-        console.log(`   Job ID: ${jobId}`)
-        console.log(`   Processed: ${processedFiles}/${objectsList.length} files`)
-        console.log(`   Documents indexed: ${totalDocuments}`)
-        console.log(`   Paused at: ${new Date().toISOString()}\n`)
+        await log.warn(`JOB PAUSED by user`)
+        await log.warn(`Processed: ${processedFiles}/${objectsList.length} files`)
+        await log.warn(`Documents indexed: ${totalDocuments}`)
+        await log.warn(`Paused at: ${new Date().toISOString()}`)
         return { success: false, paused: true, totalFiles: objectsList.length, totalDocuments }
       }
 
       // Skip already processed files (for resume functionality)
       if (processedFileNames.includes(fileObj.name)) {
-        console.log(`⏭️  [${fileNumber}/${objectsList.length}] Skipping already processed: ${fileObj.name}`)
+        await log.log(`[${fileNumber}/${objectsList.length}] Skipping already processed: ${fileObj.name}`)
         continue
       }
 
       try {
         const startTime = Date.now()
-        console.log(`\n📄 [${fileNumber}/${objectsList.length}] Processing: ${fileObj.name}`)
-        console.log(`   File size: ${(fileObj.size / 1024 / 1024).toFixed(2)} MB`)
+        await log.info(`[${fileNumber}/${objectsList.length}] Processing: ${fileObj.name}`)
+        await log.info(`File size: ${(fileObj.size / 1024 / 1024).toFixed(2)} MB`)
 
         // Process PDF using LlamaIndex
-        const docCount = await processPDFFile(fileObj.name, projectId)
+        const docCount = await processPDFFile(fileObj.name, projectId, chunking)
 
         successfulFiles++
         processedFiles++
@@ -298,11 +330,11 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
           })
         }
 
-        console.log(`   ✅ Success! Processed ${docCount} documents in ${duration}s`)
+        await log.info(`Success! Processed ${docCount} document chunks in ${duration}s`)
 
       } catch (error) {
-        console.error(`\n❌ [${fileNumber}/${objectsList.length}] Failed: ${fileObj.name}`)
-        console.error(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        await log.error(`[${fileNumber}/${objectsList.length}] Failed: ${fileObj.name}`)
+        await log.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
         failedFiles++
         processedFiles++
 
@@ -341,25 +373,22 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       },
     })
 
-    console.log(`\n${'='.repeat(60)}`)
-    console.log(`INDEXING COMPLETE! ✅`)
-    console.log(`${'='.repeat(60)}`)
-    console.log(`   Job ID: ${jobId}`)
-    console.log(`   Total files: ${objectsList.length}`)
-    console.log(`   Processed: ${processedFiles}`)
-    console.log(`   Successful: ${successfulFiles}`)
-    console.log(`   Failed: ${failedFiles}`)
-    console.log(`   Total documents indexed: ${totalDocuments}`)
-    console.log(`   Completed at: ${new Date().toISOString()}`)
-    console.log(`${'='.repeat(60)}\n`)
+    await log.info(`INDEXING COMPLETE!`)
+    await log.info(`Job ID: ${jobId}`)
+    await log.info(`Total files: ${objectsList.length}`)
+    await log.info(`Processed: ${processedFiles}`)
+    await log.info(`Successful: ${successfulFiles}`)
+    await log.info(`Failed: ${failedFiles}`)
+    await log.info(`Total documents indexed: ${totalDocuments}`)
+    await log.info(`Completed at: ${new Date().toISOString()}`)
     
     return { success: true, totalFiles: objectsList.length, totalDocuments }
 
   } catch (error) {
-    console.error(`\n❌ FATAL ERROR processing indexing job ${jobId}:`)
-    console.error(`   ${error instanceof Error ? error.message : 'Unknown error'}`)
+    await log.error(`FATAL ERROR processing indexing job ${jobId}`)
+    await log.error(`${error instanceof Error ? error.message : 'Unknown error'}`)
     if (error instanceof Error && error.stack) {
-      console.error(`   ${error.stack}`)
+      await log.error(`${error.stack}`)
     }
 
     // Mark job as failed

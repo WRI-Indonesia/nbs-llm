@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isAdmin } from '@/lib/auth'
 import { getServerSession } from 'next-auth'
@@ -9,7 +9,7 @@ import { getMinioClient, initBucket } from '@/lib/minio'
 const BUCKET_NAME = process.env.MINIO_BUCKET ?? ''
 const DEFAULT_PREFIX = process.env.MINIO_STORAGE_PREFIX ?? ''
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     if (!(await isAdmin())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })

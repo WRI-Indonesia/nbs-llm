@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     // Execute the SQL query
     let executionResult
     try {
-      executionResult = await executeSQLQuery(sqlQuery, projectId, newQuery, chatHistory)
+      executionResult = await executeSQLQuery(sqlQuery, projectId, newQuery)
     } catch (executionError) {
       const updatedChatHistory = createUpdatedChatHistory(
         chatHistory,

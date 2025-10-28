@@ -132,8 +132,7 @@ export function cleanSQLQuery(sqlQuery: string): string {
 export async function executeSQLQuery(
   sqlQuery: string,
   projectId: string,
-  userQuery: string,
-  chatHistory: ChatMessage[] = []
+  userQuery: string
 ): Promise<{ data: any[], answer: string }> {
   const prismaForSchema = createPrismaClientWithSchema(projectId)
 
@@ -145,7 +144,7 @@ export async function executeSQLQuery(
     const result = await prismaForSchema.$queryRawUnsafe(cleanedQuery)
 
     // Generate a natural-language answer based on the user's query and the results
-    const answer = await generateAnswer(userQuery, result as any[], chatHistory)
+    const answer = await generateAnswer(userQuery, result as any[])
 
     return {
       data: result as any[],
@@ -163,7 +162,7 @@ export async function executeSQLQuery(
 /**
  * Generates natural language answer based on query results
  */
-async function generateAnswer(userQuery: string, data: any[], chatHistory: ChatMessage[] = []): Promise<string> {
+async function generateAnswer(userQuery: string, data: any[]): Promise<string> {
   try {
     const prompt = `
 You're an expert researcher on Nature-Based Solutions. Keep your response SHORT and conversational.

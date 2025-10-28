@@ -62,8 +62,8 @@ export async function repromptQuery(question: string, districts: string[]): Prom
             type: "input_text",
             text: JSON.stringify({ question, params: { districts } })
           }
-        ]
-      }
+        ],
+      },
     ]
   });
 

@@ -1,24 +1,26 @@
 import { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
-import { 
-  createSuccessResponse, 
-  createErrorResponse, 
-  mapRelevantDocuments, 
+import {
+  createSuccessResponse,
+  createErrorResponse,
+  mapRelevantDocuments,
   createSearchStats,
-  ChatMessage 
+  ChatMessage
 } from './_utils/response-utils'
-import { 
-  getChatHistoryFromDB, 
-  saveChatHistoryToDB, 
-  createUpdatedChatHistory 
+import {
+  getChatHistoryFromDB,
+  saveChatHistoryToDB,
+  createUpdatedChatHistory
 } from './_utils/chat-history-utils'
-import { 
-  generateQueryEmbedding, 
-  generateSQLQuery, 
-  executeSQLQuery 
+import {
+  generateQueryEmbedding,
+  generateSQLQuery,
+  executeSQLQuery
 } from './_utils/sql-utils'
 import { searchRagDocuments } from './_utils/rag-utils'
 import { repromptQuery } from './_utils/query-utils'
+import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 export interface SearchRequest {
   query: string
@@ -64,8 +66,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Re-prompt query to handle inputted district
-    const repromtResult = await repromptQuery(query, location.district)
-    const newQuery = repromtResult.result
+    // const repromtResult = await repromptQuery(query, location.district)
+    // const newQuery = repromtResult.result
+    const newQuery = query
+    console.log(newQuery)
 
     if (newQuery === 'false') {
       const updatedChatHistory = createUpdatedChatHistory(
@@ -86,8 +90,45 @@ export async function POST(request: NextRequest) {
     // Generate embedding for the search query
     const queryEmbedding = await generateQueryEmbedding(newQuery)
 
+    // Define the parameters for the SQL function
+    const queryEmbeddings = JSON.stringify(queryEmbedding);
+    const TOP_K = 10;
+    const SIMILARITY_THRESHOLD = 0.; // Use 0.0 to skip the filter
+
+    // Step 2: Call the SQL function using $queryRaw
+    const test: any = await prisma.$queryRaw(
+      Prisma.sql`
+      SELECT 
+        * FROM 
+        match_minio_docs(
+          ${queryEmbeddings}::TEXT,  -- Passing the correctly formatted string
+          ${TOP_K}::INT,         
+          ${SIMILARITY_THRESHOLD}::FLOAT 
+        );
+    `
+    );
+
+    console.log(`Found ${test.length} relevant documents.`);
+    console.log(test)
+
+    // Get all Node documents with embeddings
+    const ragDocs = await (prisma.nodeDocs.findMany as any)({
+      where: {
+        embedding: {
+          not: null
+        }
+      },
+      include: {
+        node: {
+          include: {
+            project: true
+          }
+        }
+      }
+    })
+
     // Search for relevant RAG documents
-    const relevantDocs = await searchRagDocuments(queryEmbedding, min_cosine, top_k)
+    const relevantDocs = await searchRagDocuments(ragDocs, queryEmbedding, min_cosine, top_k)
 
     if (relevantDocs.length === 0) {
       const updatedChatHistory = createUpdatedChatHistory(
@@ -128,16 +169,32 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Get all Minio documents with embeddings
+    const minioDocs = await prisma.minioDocs.findMany({
+      where: {
+        embedding: {
+          not: null
+        }
+      },
+      select: {
+        embedding: true
+      }
+    })
+
+    // Search for relevant RAG documents
+    const minioRelevantDocs = await searchRagDocuments(minioDocs, queryEmbedding, min_cosine, top_k)
+    console.log(minioRelevantDocs)
+
     // Execute the SQL query
     let executionResult
     try {
-      executionResult = await executeSQLQuery(sqlQuery, projectId, newQuery)
+      executionResult = await executeSQLQuery(sqlQuery, projectId, newQuery, minioRelevantDocs)
     } catch (executionError) {
       const updatedChatHistory = createUpdatedChatHistory(
         chatHistory,
         query,
         `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`,
-        { 
+        {
           sqlQuery: sqlQuery,
           ragDocuments: mapRelevantDocuments(relevantDocs)
         }
@@ -179,6 +236,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in search API:', error)
+
     return createErrorResponse(
       'Failed to process search query',
       error instanceof Error ? error.message : 'Unknown error'

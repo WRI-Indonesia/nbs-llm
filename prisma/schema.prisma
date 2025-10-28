@@ -56,11 +56,11 @@ model VerificationToken {
 }
 
 model FlowProject {
-  id           String         @id @default(cuid())
-  name         String         @default("Main Project")
-  description  String?        @default("Main knowledge flow project")
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id           String        @id @default(cuid())
+  name         String        @default("Main Project")
+  description  String?       @default("Main knowledge flow project")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   edges        FlowEdge[]
   nodes        FlowNode[]
   MinioDocs    MinioDocs[]
@@ -115,66 +115,66 @@ model NodeDocs {
 }
 
 model MinioDocs {
-  id               Int      @id @default(autoincrement())
+  id               Int         @id @default(autoincrement())
   projectId        String
-  fileName         String?  @default("")
+  fileName         String?     @default("")
   text             String
   embedding        String?
-  contextPrecision  Float?
+  contextPrecision Float?
   contextRecall    Float?
   faithfulness     Float?
   answerRelevance  Float?
   averageScore     Float?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
   project          FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("minio_docs")
 }
 
 model IndexingJob {
-  id             String    @id @default(cuid())
-  projectId      String
-  status         String    @default("pending") // pending, processing, paused, completed, failed, cancelled
-  totalFiles     Int       @default(0)
-  processedFiles Int       @default(0)
-  successfulFiles Int      @default(0)
-  failedFiles    Int       @default(0)
-  totalDocuments Int       @default(0)
-  error          String?
-  startedAt      DateTime  @default(now())
-  completedAt     DateTime?
-  startedBy      String    // user who started it
-  processedFileNames Json?  @default("[]") // Track which files have been processed for pause/resume
-  project        FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  logs           IndexingLog[]
+  id                 String        @id @default(cuid())
+  projectId          String
+  status             String        @default("pending") // pending, processing, paused, completed, failed, cancelled
+  totalFiles         Int           @default(0)
+  processedFiles     Int           @default(0)
+  successfulFiles    Int           @default(0)
+  failedFiles        Int           @default(0)
+  totalDocuments     Int           @default(0)
+  error              String?
+  startedAt          DateTime      @default(now())
+  completedAt        DateTime?
+  startedBy          String // user who started it
+  processedFileNames Json?         @default("[]") // Track which files have been processed for pause/resume
+  project            FlowProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs               IndexingLog[]
 
   @@map("indexing_jobs")
 }
 
 model IndexingLog {
-  id          String      @id @default(cuid())
-  jobId       String
-  level       String      // log, info, warn, error
-  message     String
-  timestamp   DateTime    @default(now())
-  job         IndexingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id        String      @id @default(cuid())
+  jobId     String
+  level     String // log, info, warn, error
+  message   String
+  timestamp DateTime    @default(now())
+  job       IndexingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId])
   @@map("indexing_logs")
 }
 
 model ChatHistory {
-  id            String   @id @default(cuid())
-  userId        String
-  projectId     String
-  role          String   // 'user' or 'assistant'
-  content       String
-  sqlQuery      String?  // Store generated SQL query for assistant messages
-  ragDocuments  Json?    // Store relevant RAG documents as JSON
-  data          Json?    // Store SQL query results data as JSON
-  timestamp     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  userId       String
+  projectId    String
+  role         String // 'user' or 'assistant'
+  content      String
+  sqlQuery     String? // Store generated SQL query for assistant messages
+  ragDocuments Json? // Store relevant RAG documents as JSON
+  data         Json? // Store SQL query results data as JSON
+  timestamp    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chat_history")
 }
@@ -197,13 +197,13 @@ enum UserRole {
 }
 
 model Config {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  chunkSize  Int      @default(1000)
-  overlap    Int      @default(200)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  chunkSize Int      @default(1000)
+  overlap   Int      @default(200)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("configs")
 }

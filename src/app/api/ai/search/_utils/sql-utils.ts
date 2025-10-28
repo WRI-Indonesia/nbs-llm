@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client'
 import OpenAI from 'openai'
-import { ChatMessage } from './response-utils'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -132,7 +131,8 @@ export function cleanSQLQuery(sqlQuery: string): string {
 export async function executeSQLQuery(
   sqlQuery: string,
   projectId: string,
-  userQuery: string
+  userQuery: string,
+  context: any[]
 ): Promise<{ data: any[], answer: string }> {
   const prismaForSchema = createPrismaClientWithSchema(projectId)
 
@@ -144,7 +144,7 @@ export async function executeSQLQuery(
     const result = await prismaForSchema.$queryRawUnsafe(cleanedQuery)
 
     // Generate a natural-language answer based on the user's query and the results
-    const answer = await generateAnswer(userQuery, result as any[])
+    const answer = await generateAnswer(userQuery, result as any[], context)
 
     return {
       data: result as any[],
@@ -162,51 +162,130 @@ export async function executeSQLQuery(
 /**
  * Generates natural language answer based on query results
  */
-async function generateAnswer(userQuery: string, data: any[]): Promise<string> {
+// async function generateAnswer(userQuery: string, data: any[], context: any[]): Promise<string> {
+//   try {
+//     const prompt = `
+// You're an expert researcher on Nature-Based Solutions. Keep your response SHORT and conversational.
+
+// Current question:
+// ${userQuery}
+
+// Data:
+// ${JSON.stringify(data, null, 2)}
+
+// Context:
+// ${JSON.stringify(context, null, 2)}
+
+// Guidelines:
+// - Keep it SHORT (2-5 sentences max)
+// - Be conversational and friendly
+// - If data is empty, just say "No data found for this query"
+// - Don't repeat previous conversation details unless directly relevant
+
+// Your short response:
+// `
+
+//     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+//       {
+//         role: "system",
+//         content: "You're having a friendly, SHORT conversation about Nature-Based Solutions data. Keep responses brief and conversational."
+//       }
+//     ]
+
+//     messages.push({
+//       role: "user",
+//       content: prompt
+//     })
+
+//     const completion = await openai.chat.completions.create({
+//       model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+//       messages,
+//       temperature: 0.7,
+//       max_tokens: 500 // Much shorter responses
+//     })
+
+//     return (
+//       completion.choices[0]?.message?.content?.trim() ||
+//       "No data found for this query."
+//     )
+//   } catch (error) {
+//     console.error("Error generating answer:", error)
+//     return "Sorry, couldn't analyze the data right now."
+//   }
+// }
+
+async function generateAnswer(userQuery: string, data: any[], context: any[]): Promise<string> {
+  // Define the new API endpoint and model
+  const SEA_LLM_ENDPOINT = "https://seallm.wri-indonesia.or.id/v1/chat/completions";
+  const SEA_LLM_MODEL = "SeaLLMs/SeaLLM-7B-v2.5";
+
   try {
-    const prompt = `
-You're an expert researcher on Nature-Based Solutions. Keep your response SHORT and conversational.
+    // 1. Construct a detailed prompt that strongly integrates data and context
+    const contextString = context.length > 0
+      ? `\n\n--- Relevant Context ---\n${JSON.stringify(context, null, 2)}`
+      : "";
 
-Current question:
-${userQuery}
+    const dataString = data.length > 0
+      ? `\n\n--- Current Query Data ---\n${JSON.stringify(data, null, 2)}`
+      : "";
 
-Data:
-${JSON.stringify(data, null, 2)}
+    if (data.length === 0) {
+      return "No data found for this query";
+    }
+
+    const systemPrompt = "You are an expert researcher on Nature-Based Solutions. Keep your response SHORT, conversational, and friendly. You MUST use the provided 'Context' and 'Current Query Data' to formulate your answer.";
+
+    const userMessage = `
+Current question: ${userQuery}
+
+${dataString}
+${contextString}
 
 Guidelines:
 - Keep it SHORT (2-5 sentences max)
 - Be conversational and friendly
-- If data is empty, just say "No data found for this query"
-- Don't repeat previous conversation details unless directly relevant
+- Base your entire answer on the provided data and context.
+- Your short response:
+`;
 
-Your short response:
-`
+    // 2. Prepare the payload for the SeaLLM API
+    const payload = {
+      model: SEA_LLM_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage }
+      ],
+      temperature: 0.4,
+      max_tokens: 500
+    };
 
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      {
-        role: "system",
-        content: "You're having a friendly, SHORT conversation about Nature-Based Solutions data. Keep responses brief and conversational."
-      }
-    ]
+    // 3. Make the API call using fetch
+    const response = await fetch(SEA_LLM_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+        // Note: Check if the SeaLLM endpoint requires an Authorization header/API key.
+        // If it does, you would need to add it here, e.g.:
+        // 'Authorization': `Bearer ${process.env.SEA_LLM_API_KEY}`
+      },
+      body: JSON.stringify(payload)
+    });
 
-    messages.push({
-      role: "user",
-      content: prompt
-    })
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API call failed with status ${response.status}: ${errorText}`);
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
-      messages,
-      temperature: 0.7,
-      max_tokens: 500 // Much shorter responses
-    })
+    const result = await response.json();
 
+    // 4. Extract and return the answer
     return (
-      completion.choices[0]?.message?.content?.trim() ||
-      "No data found for this query."
-    )
+      result.choices?.[0]?.message?.content?.trim() ||
+      "Sorry, I got data back, but it was empty."
+    );
+
   } catch (error) {
-    console.error("Error generating answer:", error)
-    return "Sorry, couldn't analyze the data right now."
+    console.error("Error generating answer with SeaLLM:", error);
+    return "Sorry, couldn't analyze the data right now.";
   }
 }

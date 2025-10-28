@@ -114,14 +114,19 @@ model NodeDocs {
 }
 
 model MinioDocs {
-  id        Int      @id @default(autoincrement())
-  projectId String
-  fileName  String? @default("")
-  text      String
-  embedding String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  project   FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id               Int      @id @default(autoincrement())
+  projectId        String
+  fileName         String?  @default("")
+  text             String
+  embedding        String?
+  contextPrecision  Float?
+  contextRecall    Float?
+  faithfulness     Float?
+  answerRelevance  Float?
+  averageScore     Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  project          FlowProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("minio_docs")
 }

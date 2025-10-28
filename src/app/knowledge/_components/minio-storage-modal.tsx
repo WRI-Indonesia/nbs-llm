@@ -102,7 +102,7 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
       fetchJobStatus()
       
       // Start polling for job status (only for active jobs)
-      const interval = setInterval(fetchJobStatus, 2000)
+      const interval = setInterval(fetchJobStatus, 10000)
       setPollingInterval(interval)
       
       return () => {
@@ -323,7 +323,6 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
                   variant="default"
                   onClick={jobStatus?.status === 'paused' ? () => handleControl('resume') : handleIndex}
                   disabled={indexing || uploading || isLoading || (jobStatus?.status === 'processing')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {jobStatus?.status === 'paused' ? (
                     <>

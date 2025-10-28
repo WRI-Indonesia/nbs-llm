@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "minio_docs" ADD COLUMN "contextPrecision" DOUBLE PRECISION,
+ADD COLUMN "contextRecall" DOUBLE PRECISION,
+ADD COLUMN "faithfulness" DOUBLE PRECISION,
+ADD COLUMN "answerRelevance" DOUBLE PRECISION,
+ADD COLUMN "averageScore" DOUBLE PRECISION;
+

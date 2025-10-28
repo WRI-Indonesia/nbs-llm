@@ -7,8 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "worker": "ts-node --project tsconfig.json src/workers/index-worker.ts",
-    "worker:dev": "tsx watch src/workers/index-worker.ts"
+    "worker": "tsx src/workers/index-worker.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

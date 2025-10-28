@@ -5,37 +5,30 @@ import { indexQueue } from '@/lib/queue'
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if user is admin
     if (!(await isAdmin())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(request.url)
+    const searchParams = (request as any).nextUrl?.searchParams ?? new URL(request.url).searchParams
     const jobId = searchParams.get('jobId')
-    const action = searchParams.get('action') // 'pause', 'resume', 'cancel'
+    const action = searchParams.get('action') // 'pause' | 'resume' | 'cancel'
 
     if (!jobId) {
       return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
     }
-
     if (!action || !['pause', 'resume', 'cancel'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action. Use pause, resume, or cancel' }, { status: 400 })
     }
 
-    // Find the job
-    const job = await prisma.indexingJob.findUnique({
-      where: { id: jobId }
-    })
-
+    const job = await prisma.indexingJob.findUnique({ where: { id: jobId } })
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // Handle different actions
+    // Pause: mark DB as paused (workers should check DB before processing items)
     if (action === 'pause') {
-      // Only allow pausing processing jobs
       if (job.status !== 'processing') {
-        return NextResponse.json({ error: 'Can only pause processing jobs' }, { status: 400 })
+        return NextResponse.json({ error: 'Can only pause jobs with status "processing"' }, { status: 400 })
       }
 
       await prisma.indexingJob.update({
@@ -43,99 +36,113 @@ export async function POST(request: NextRequest) {
         data: { status: 'paused' }
       })
 
-      console.log(`Job ${jobId} paused`)
-
-      return NextResponse.json({
-        success: true,
-        status: 'paused',
-        message: 'Job paused successfully'
-      })
+      console.log(`Job ${jobId} paused (DB updated)`)
+      return NextResponse.json({ success: true, status: 'paused', message: 'Job paused successfully' })
     }
 
+    // Resume: update DB and re-queue the job if not present
     if (action === 'resume') {
-      // Only allow resuming paused jobs
       if (job.status !== 'paused') {
-        return NextResponse.json({ error: 'Can only resume paused jobs' }, { status: 400 })
+        return NextResponse.json({ error: 'Can only resume jobs with status "paused"' }, { status: 400 })
       }
 
-      // Update status to processing
+      // update DB to processing
       await prisma.indexingJob.update({
         where: { id: jobId },
         data: { status: 'processing' }
       })
 
-      // Try to remove any existing job from the queue (in case it's stuck)
+      // Attempt to remove any leftover job with the same ID then re-add.
+      // Use the same jobId so later cancels/resumes match easily.
       try {
-        const existingJob = await indexQueue.getJob(jobId)
-        if (existingJob) {
-          await existingJob.remove()
-          console.log(`Removed existing job ${jobId} from queue`)
+        const existing = await indexQueue.getJob(jobId)
+        if (existing) {
+          try {
+            const state = await existing.getState()
+            // Only remove if it's safe (not active/locked)
+            if (['waiting', 'delayed', 'paused', 'waiting-children'].includes(state)) {
+              await existing.remove()
+              console.log(`Removed existing queued job ${jobId} (state=${state}) before re-queue`)
+            } else {
+              console.log(`Skip removal for job ${jobId} because state=${state} (likely active)`)
+            }
+          } catch (stateErr) {
+            console.warn(`Could not determine state for job ${jobId} prior to re-queue:`, stateErr)
+          }
         }
-      } catch (error) {
-        console.log(`No existing job ${jobId} in queue (this is ok)`)
+      } catch (err) {
+        console.warn(`Error while cleaning up existing queued job ${jobId}:`, err)
       }
 
-      // Re-add job to queue with a unique ID to avoid conflicts
-      await indexQueue.add(
-        'index-pdfs',
-        {
-          jobId: jobId,
-          projectId: job.projectId,
-          userId: job.startedBy,
-        },
-        {
-          jobId: `${jobId}-resume-${Date.now()}` // Unique ID for resume
-        }
-      )
+      try {
+        await indexQueue.add(
+          'process-indexing',
+          {
+            jobId: jobId,
+            projectId: job.projectId,
+            userId: job.startedBy,
+          },
+          {
+            jobId: jobId, // reuse same ID so it can be referenced/removed later
+          }
+        )
+        console.log(`Job ${jobId} re-queued for processing`)
+      } catch (err) {
+        console.error(`Failed to re-queue job ${jobId}:`, err)
+        // revert status so admin can retry
+        await prisma.indexingJob.update({
+          where: { id: jobId },
+          data: { status: 'paused' }
+        })
+        return NextResponse.json({ error: 'Failed to re-queue job', details: (err as Error).message }, { status: 500 })
+      }
 
-      console.log(`Job ${jobId} resumed and re-queued with new ID`)
-
-      return NextResponse.json({
-        success: true,
-        status: 'processing',
-        message: 'Job resumed successfully'
-      })
+      return NextResponse.json({ success: true, status: 'processing', message: 'Job resumed and re-queued successfully' })
     }
 
+    // Cancel: same semantics as CANCEL handler but allow paused/pending/processing
     if (action === 'cancel') {
-      // Only allow cancelling pending, processing, or paused jobs
       if (['completed', 'failed', 'cancelled'].includes(job.status)) {
-        return NextResponse.json({ error: 'Cannot cancel completed, failed, or cancelled job' }, { status: 400 })
+        return NextResponse.json({ error: `Cannot cancel job with status '${job.status}'` }, { status: 400 })
       }
 
-      // Cancel the job in the queue
       try {
-        const jobToCancel = await indexQueue.getJob(jobId)
-        if (jobToCancel) {
-          await jobToCancel.remove()
+        const queued = await indexQueue.getJob(jobId)
+        if (queued) {
+          try {
+            const state = await queued.getState()
+            if (['waiting', 'delayed', 'paused', 'waiting-children'].includes(state)) {
+              await queued.remove()
+              console.log(`Removed job ${jobId} from queue (state=${state})`)
+            } else {
+              console.log(`Job ${jobId} is ${state} (likely active/locked); marking as cancelled in DB and letting worker stop.`)
+            }
+          } catch (stateErr) {
+            console.warn(`Could not determine job state for ${jobId} during cancel:`, stateErr)
+          }
+        } else {
+          console.log(`Job ${jobId} not found in queue (maybe already processed)`)
         }
-      } catch (error) {
-        console.log('Job not found in queue (may have already completed)')
+      } catch (err) {
+        console.warn(`Error while removing job ${jobId} from queue:`, err)
       }
 
-      // Update job status to cancelled
       await prisma.indexingJob.update({
         where: { id: jobId },
-        data: {
-          status: 'cancelled',
-          completedAt: new Date(),
-        }
+        data: { status: 'cancelled', completedAt: new Date() }
       })
 
-      console.log(`Job ${jobId} cancelled`)
-
-      return NextResponse.json({
-        success: true,
-        message: 'Job cancelled successfully'
-      })
+      console.log(`Job ${jobId} cancelled (DB updated)`)
+      return NextResponse.json({ success: true, message: 'Job cancelled successfully' })
     }
 
+    // Should never get here
+    return NextResponse.json({ error: 'Unhandled action' }, { status: 400 })
   } catch (error) {
     console.error('Error controlling job:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to control job',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
-

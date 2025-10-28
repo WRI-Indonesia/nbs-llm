@@ -6,30 +6,25 @@ import { authOptions } from '@/lib/auth'
 import { indexQueue } from '@/lib/queue'
 import { getMinioClient, initBucket } from '@/lib/minio'
 
-const BUCKET_NAME = process.env.MINIO_BUCKET || 'documents'
-const DEFAULT_PREFIX = process.env.MINIO_STORAGE_PREFIX || ''
+const BUCKET_NAME = process.env.MINIO_BUCKET ?? ''
+const DEFAULT_PREFIX = process.env.MINIO_STORAGE_PREFIX ?? ''
 
 export async function GET(request: NextRequest) {
   try {
-    // Check if user is admin
     if (!(await isAdmin())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    // Get current user session
     const session = await getServerSession(authOptions)
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const PROJECT_ID = 'DEFAULT'
-    const userId = session.user.id || session.user.email || 'system'
+    const userId = (session.user as any).id ?? (session.user as any).email ?? 'system'
 
-    // Check if FlowProject exists, create if not
-    let project = await prisma.flowProject.findUnique({
-      where: { id: PROJECT_ID }
-    })
-
+    // Ensure project exists
+    let project = await prisma.flowProject.findUnique({ where: { id: PROJECT_ID } })
     if (!project) {
       project = await prisma.flowProject.create({
         data: {
@@ -40,7 +35,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Check if there's already a running job for this project
+    // Prevent duplicate running job for this project
     const existingJob = await prisma.indexingJob.findFirst({
       where: {
         projectId: PROJECT_ID,
@@ -53,38 +48,37 @@ export async function GET(request: NextRequest) {
         jobId: existingJob.id,
         status: existingJob.status,
         message: 'Indexing job already in progress',
-        startedAt: existingJob.startedAt,
+        startedAt: existingJob.startedAt
       })
     }
 
-    // Count PDF files in MinIO to estimate job size
+    // Count PDFs in MinIO
     await initBucket(BUCKET_NAME)
     const minioClient = getMinioClient()
-    
     let pdfCount = 0
+
     const objectsStream = minioClient.listObjects(BUCKET_NAME, DEFAULT_PREFIX, true)
-    
     for await (const obj of objectsStream) {
-      if (obj.name?.endsWith('/')) continue
-      const fileExtension = obj.name?.split('.').pop()?.toLowerCase()
-      if (fileExtension === 'pdf') {
-        pdfCount++
-      }
+      if (!obj || !obj.name) continue
+      if (obj.name.endsWith('/')) continue
+      const ext = obj.name.split('.').pop()?.toLowerCase()
+      if (ext === 'pdf') pdfCount++
     }
 
-    // Create indexing job record
+    // Create job record
     const job = await prisma.indexingJob.create({
       data: {
         projectId: PROJECT_ID,
         status: 'pending',
         totalFiles: pdfCount,
-        startedBy: userId,
+        startedBy: userId
       }
     })
 
-    // Add job to queue
-    await indexQueue.add(
-      'index-pdfs',
+    // Add to queue with the same jobId (so control endpoints can find it)
+    console.log(`Adding indexing job ${job.id} to queue`)
+    const queuedJob = await indexQueue.add(
+      'process-indexing',
       {
         jobId: job.id,
         projectId: PROJECT_ID,
@@ -95,7 +89,7 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    console.log(`Indexing job ${job.id} queued with ${pdfCount} PDF files`)
+    console.log(`Indexing job queued: dbId=${job.id} queueId=${queuedJob.id} totalFiles=${pdfCount}`)
 
     return NextResponse.json({
       success: true,
@@ -104,10 +98,9 @@ export async function GET(request: NextRequest) {
       totalFiles: pdfCount,
       message: 'Indexing job queued successfully',
     })
-
   } catch (error) {
     console.error('Error queuing indexing job:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to queue indexing job',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })

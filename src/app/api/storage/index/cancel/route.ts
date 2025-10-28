@@ -5,68 +5,61 @@ import { indexQueue } from '@/lib/queue'
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if user is admin
+    // Admin guard
     if (!(await isAdmin())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(request.url)
+    // Support both App Router and plain URL usage
+    const searchParams = (request as any).nextUrl?.searchParams ?? new URL(request.url).searchParams
     const jobId = searchParams.get('jobId')
 
     if (!jobId) {
       return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
     }
 
-    // Find the job
-    const job = await prisma.indexingJob.findUnique({
-      where: { id: jobId }
-    })
-
+    // Find job in DB
+    const job = await prisma.indexingJob.findUnique({ where: { id: jobId } })
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // Only allow cancelling pending or processing jobs
-    if (job.status === 'completed') {
-      return NextResponse.json({ error: 'Cannot cancel completed job' }, { status: 400 })
+    // Only allow cancelling pending/processing/paused (disallow completed/failed/cancelled)
+    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+      return NextResponse.json({ error: `Cannot cancel job with status '${job.status}'` }, { status: 400 })
     }
 
-    if (job.status === 'failed') {
-      return NextResponse.json({ error: 'Cannot cancel failed job' }, { status: 400 })
-    }
-
-    // Cancel the job in the queue
+    // Try to remove job from queue (if present)
     try {
-      const jobToCancel = await indexQueue.getJob(jobId)
-      if (jobToCancel) {
-        await jobToCancel.remove()
+      const queued = await indexQueue.getJob(jobId)
+      if (queued) {
+        await queued.remove()
+        console.log(`Removed job ${jobId} from queue`)
+      } else {
+        console.log(`Job ${jobId} not present in queue`)
       }
-    } catch (error) {
-      console.log('Job not found in queue (may have already completed)')
+    } catch (err) {
+      // non-fatal: log and continue to update DB
+      console.warn(`Error while removing job ${jobId} from queue:`, err)
     }
 
-    // Update job status to cancelled
+    // Update DB to cancelled
     await prisma.indexingJob.update({
       where: { id: jobId },
       data: {
         status: 'cancelled',
         completedAt: new Date(),
-      }
+      },
     })
 
-    console.log(`Job ${jobId} cancelled`)
+    console.log(`Job ${jobId} cancelled (DB updated)`)
 
-    return NextResponse.json({
-      success: true,
-      message: 'Job cancelled successfully'
-    })
-
+    return NextResponse.json({ success: true, message: 'Job cancelled successfully' })
   } catch (error) {
     console.error('Error cancelling job:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to cancel job',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
-

@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/auth'
 import OpenAI from 'openai'
 import { PrismaClient } from '@prisma/client'
+import { rerankSchemaDocuments, rerankPaperDocuments } from '@/lib/cohere-rerank'
+import { rewriteQueryForRetrieval } from '@/lib/query-rewriter'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -141,23 +143,29 @@ async function generateQueryEmbedding(query: string): Promise<number[]> {
 }
 
 // Function to search for relevant RAG documents (schemas only)
-async function searchRagDocuments(queryEmbedding: number[], minCosine: number, topK: number) {
+async function searchRagDocuments(
+  queryEmbedding: number[],
+  minCosine: number,
+  topK: number,
+  query: string,
+  useRerank: boolean = true
+) {
   // Get all RAG documents with embeddings (schema only)
-  const ragDocs = await (prisma.ragDocs.findMany as any)({
-    where: {
-      embedding: {
-        not: null
-      },
-      source: 'schema' // Only schema documents
-    },
-    include: {
-      node: {
-        include: {
-          project: true
-        }
-      }
-    }
-  })
+  const ragDocs = await prisma.$queryRaw<any[]>`
+    SELECT r.*, 
+           jsonb_build_object(
+             'id', n.id,
+             'nodeId', n."nodeId",
+             'type', n.type,
+             'data', n.data,
+             'createdAt', n."createdAt",
+             'projectId', n."projectId"
+           ) as node_data
+    FROM rag_docs r
+    INNER JOIN flow_nodes n ON r."nodeId" = n.id
+    WHERE r.embedding IS NOT NULL
+      AND r.source = 'schema'
+  `
 
   // Calculate similarities and filter by minimum cosine similarity
   const similarities: Array<{ doc: any; similarity: number }> = []
@@ -165,11 +173,21 @@ async function searchRagDocuments(queryEmbedding: number[], minCosine: number, t
   for (const doc of ragDocs) {
     if (doc.embedding) {
       try {
-        const docEmbedding = JSON.parse(doc.embedding) as number[]
+        const docEmbedding = typeof doc.embedding === 'string' 
+          ? JSON.parse(doc.embedding) 
+          : doc.embedding as number[]
         const similarity = cosineSimilarity(queryEmbedding, docEmbedding)
 
         if (similarity >= minCosine) {
-          similarities.push({ doc, similarity })
+          // Reconstruct the doc structure
+          const reconstructed = {
+            ...doc,
+            node: doc.node_data,
+            text: doc.text,
+            id: doc.id,
+            nodeId: doc.nodeId
+          }
+          similarities.push({ doc: reconstructed, similarity })
         }
       } catch (error) {
         console.error('Error parsing embedding for doc:', doc.id, error)
@@ -177,25 +195,43 @@ async function searchRagDocuments(queryEmbedding: number[], minCosine: number, t
     }
   }
 
-  // Sort by similarity and return top K results
+  // Sort by similarity
   similarities.sort((a, b) => b.similarity - a.similarity)
+  
+  // Apply Cohere Rerank if enabled
+  if (useRerank && process.env.COHERE_API_KEY && similarities.length > topK) {
+    console.log(`📊 First-pass retrieved ${similarities.length} documents`)
+    const reranked = await rerankSchemaDocuments(query, similarities, topK)
+    console.log(`🎯 Reranked to top ${reranked.length} documents`)
+    return reranked
+  }
+  
+  // Fallback: return top K without reranking
   return similarities.slice(0, topK)
 }
 
 // Function to search for relevant research papers
-async function searchPapers(queryEmbedding: number[], minCosine: number, topK: number) {
+async function searchPapers(
+  queryEmbedding: number[],
+  minCosine: number,
+  topK: number,
+  query: string,
+  useRerank: boolean = true
+) {
   // Get all paper documents with embeddings
-  const paperDocs = await (prisma.ragDocs.findMany as any)({
-    where: {
-      embedding: {
-        not: null
-      },
-      source: 'paper' // Only paper documents
-    },
-    include: {
-      node: true
-    }
-  })
+  const paperDocs = await prisma.$queryRaw<any[]>`
+    SELECT r.*,
+           jsonb_build_object(
+             'id', n.id,
+             'nodeId', n."nodeId",
+             'type', n.type,
+             'data', n.data
+           ) as node_data
+    FROM rag_docs r
+    INNER JOIN flow_nodes n ON r."nodeId" = n.id
+    WHERE r.embedding IS NOT NULL
+      AND r.source = 'paper'
+  `
 
   // Calculate similarities and filter by minimum cosine similarity
   const similarities: Array<{ doc: any; similarity: number; payload: any }> = []
@@ -203,12 +239,22 @@ async function searchPapers(queryEmbedding: number[], minCosine: number, topK: n
   for (const doc of paperDocs) {
     if (doc.embedding) {
       try {
-        const docEmbedding = JSON.parse(doc.embedding) as number[]
+        const docEmbedding = typeof doc.embedding === 'string'
+          ? JSON.parse(doc.embedding)
+          : doc.embedding as number[]
         const similarity = cosineSimilarity(queryEmbedding, docEmbedding)
 
         if (similarity >= minCosine) {
+          // Reconstruct the doc structure
+          const reconstructed = {
+            ...doc,
+            node: doc.node_data,
+            text: doc.text,
+            id: doc.id,
+            nodeId: doc.nodeId
+          }
           similarities.push({ 
-            doc, 
+            doc: reconstructed, 
             similarity,
             payload: doc.payload || {}
           })
@@ -219,8 +265,17 @@ async function searchPapers(queryEmbedding: number[], minCosine: number, topK: n
     }
   }
 
-  // Sort by similarity and return top K results
+  // Sort by similarity
   similarities.sort((a, b) => b.similarity - a.similarity)
+  
+  // Apply Cohere Rerank if enabled
+  if (useRerank && process.env.COHERE_API_KEY && similarities.length > topK) {
+    console.log(`📊 First-pass retrieved ${similarities.length} paper documents`)
+    const reranked = await rerankPaperDocuments(query, similarities, topK)
+    console.log(`🎯 Reranked to top ${reranked.length} papers`)
+    return reranked
+  }
+  
   return similarities.slice(0, topK)
 }
 
@@ -554,19 +609,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'top_k must be between 1 and 20' }, { status: 400 })
     }
 
+    // ===== PHASE 0: Query Rewriting and Refinement =====
+    console.log('📝 Rewriting and refining query for SEA languages...')
+    const rewritten = await rewriteQueryForRetrieval(query)
+    
+    // Use refined query for retrieval, original for answer synthesis
+    const retrievalQuery = rewritten.refined
+    const originalQuery = rewritten.original
+    
+    console.log(`🌐 Processing ${rewritten.language} query`)
+    console.log(`  Multi-part: ${rewritten.isMultiQuestion}`)
+    console.log(`  Original: ${originalQuery}`)
+    console.log(`  Refined: ${retrievalQuery}`)
+    console.log(`  Stemmed: ${rewritten.stemmed}`)
+
     // ===== PHASE 1: Query Classification =====
     console.log('🔍 Classifying query intent...')
-    const queryIntent = await classifyQueryIntent(query)
+    const queryIntent = await classifyQueryIntent(retrievalQuery)
     console.log('Query intent:', queryIntent)
 
-    // Generate embedding for the search query
-    const queryEmbedding = await generateQueryEmbedding(query)
+    // Generate embedding for the REFINED search query (with stemming applied)
+    const queryEmbedding = await generateQueryEmbedding(retrievalQuery)
 
-    // ===== PHASE 2: Parallel Multi-Source Retrieval =====
+    // ===== PHASE 2: Parallel Multi-Source Retrieval with Reranking =====
     console.log('📚 Retrieving from multiple sources...')
     const [relevantDocs, relevantPapers] = await Promise.all([
-      queryIntent.needsData ? searchRagDocuments(queryEmbedding, min_cosine, top_k) : Promise.resolve([]),
-      queryIntent.needsPapers ? searchPapers(queryEmbedding, min_cosine * 0.8, top_k) : Promise.resolve([]) // Lower threshold for papers
+      queryIntent.needsData ? searchRagDocuments(queryEmbedding, min_cosine, top_k, retrievalQuery) : Promise.resolve([]),
+      queryIntent.needsPapers ? searchPapers(queryEmbedding, min_cosine * 0.8, top_k, retrievalQuery) : Promise.resolve([]) // Lower threshold for papers
     ])
 
     console.log(`Found ${relevantDocs.length} schema docs, ${relevantPapers.length} papers`)
@@ -695,7 +764,7 @@ export async function POST(request: NextRequest) {
     // Execute the SQL query
     let executionResult
     try {
-      executionResult = await executeSQLQuery(sqlQuery, projectId, query, chatHistory) // pass user query and chat history
+      executionResult = await executeSQLQuery(sqlQuery, projectId, originalQuery, chatHistory) // Use original query for answer generation
     } catch (executionError) {
       const updatedChatHistory: ChatMessage[] = [
         ...chatHistory,
@@ -747,7 +816,7 @@ export async function POST(request: NextRequest) {
     if (relevantPapers.length > 0) {
       console.log('🔬 Synthesizing answer from papers + data')
       finalAnswer = await synthesizeResponse(
-        query,
+        originalQuery,  // Use original query for better context
         relevantPapers,
         executionResult.data,
         sqlQuery
@@ -792,7 +861,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      query,
+      query: originalQuery,  // Return original query to user
       sqlQuery,
       answer: finalAnswer,
       data: executionResult.data,
@@ -817,7 +886,13 @@ export async function POST(request: NextRequest) {
         minCosineThreshold: min_cosine,
         topK: top_k
       },
-      queryIntent
+      queryIntent,
+      rewritingInfo: {
+        isMultiPart: rewritten.isMultiQuestion,
+        questions: rewritten.questions,
+        refinedQuery: rewritten.refined,
+        language: rewritten.language
+      }
     })
 
   } catch (error) {

@@ -8,6 +8,7 @@ This is a [Next.js](https://nextjs.org) project that provides an AI-powered chat
 - 🗺️ Interactive map visualization with shapefile support
 - 📊 SQL query generation and execution
 - 🔍 RAG (Retrieval-Augmented Generation) for context-aware responses
+- 🎯 Cohere Rerank integration for improved relevance
 - 📈 Data visualization and analysis tools
 - 🔐 Authentication with Google OAuth
 
@@ -17,6 +18,7 @@ This is a [Next.js](https://nextjs.org) project that provides an AI-powered chat
 - PostgreSQL database
 - OpenAI API key
 - Google OAuth credentials
+- (Optional) Cohere API key for advanced document reranking
 
 ## Getting Started
 
@@ -46,6 +48,9 @@ GOOGLE_CLIENT_SECRET="your-google-client-secret"
 OPENAI_API_KEY="your-openai-api-key"
 OPENAI_MODEL="gpt-4o-mini"
 OPENAI_EMBEDDING="text-embedding-3-large"
+
+# Cohere (Optional - for advanced reranking)
+COHERE_API_KEY="your-cohere-api-key"
 ```
 
 ### 3. Database Setup

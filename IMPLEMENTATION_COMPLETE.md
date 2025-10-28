@@ -371,13 +371,20 @@ A: Combines scientific literature with empirical database results
 4. **Synthesis Agent**: Provides coherent, evidence-based answers instead of raw data dumps
 5. **Flexible Schema**: JSON payload allows any metadata without schema changes
 
+### Implemented Enhancements
+
+- ✅ **Cohere Rerank**: Document reranking for improved relevance (optional, requires API key)
+  - Two-stage retrieval: cosine similarity → reranking
+  - Supports both schema documents and research papers
+  - Graceful fallback if API key not configured
+
 ### Future Enhancements
 
-- **Reranking**: Add Cohere Rerank for improved relevance
 - **Citation Extraction**: Parse and store paper citations
 - **Advanced Filtering**: Filter by year, journal, keywords
 - **Multi-modal**: Support for images, tables in papers
 - **Fine-tuned Embeddings**: Domain-specific embedding model
+- **Multilingual Support**: Query in Southeast Asian languages (Indonesian, Myanmar, Thai, etc.)
 
 ---
 
@@ -389,11 +396,12 @@ A: Combines scientific literature with empirical database results
 - [x] Bulk import script working
 - [x] Search route enhanced with synthesis
 - [x] Dynamic upload API created
-- [x] Dependencies installed (`minio`, `pdf-parse`)
+- [x] Dependencies installed (`minio`, `pdf-parse`, `cohere-ai`)
 - [x] Database migration applied
 - [x] Documentation written
 - [x] Quick start script created
 - [x] All linter errors fixed
+- [x] Cohere Rerank integration completed
 
 ---
 

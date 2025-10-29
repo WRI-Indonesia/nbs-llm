@@ -1,7 +1,7 @@
 export async function generateAnswer(userQuery: string, data: any[], context: any[]): Promise<string> {
     // Define the new API endpoint and model
-    const SEA_LLM_ENDPOINT = process.env.SUMMARIZATION_MODEL_ENDPOINT || ''
-    const SEA_LLM_MODEL = process.env.SUMMARIZATION_MODEL || ''
+    const SEA_LLM_ENDPOINT = (process.env.SUMMARIZATION_MODEL_ENDPOINT || '').trim()
+    const SEA_LLM_MODEL = (process.env.SUMMARIZATION_MODEL || '').trim()
 
     try {
         // 1. Construct a detailed prompt that strongly integrates data and context
@@ -26,7 +26,6 @@ ${dataString}
 ${contextString}
 
 Guidelines:
-- Keep it SHORT (2-5 sentences max)
 - Be conversational and friendly
 - Base your entire answer on the provided data and context.
 - Your short response:
@@ -40,7 +39,7 @@ Guidelines:
                 { role: "user", content: userMessage }
             ],
             temperature: 0.4,
-            max_tokens: 500
+            max_tokens: 1000
         };
 
         // 3. Make the API call using fetch

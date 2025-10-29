@@ -13,44 +13,9 @@ import { fromLonLat } from 'ol/proj'
 import { Style, Stroke, Fill } from 'ol/style'
 import { processZipFile, addShapefileToMap, ShapefileData } from '../_utils/shapefile-utils'
 import type { SearchRequest } from "@/app/api/ai/search/_utils/types"
+import { ChatHistory } from "@prisma/client"
+import { v4 as uuidv4 } from 'uuid';
 
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-  projectId?: string
-  sqlQuery?: string
-  ragDocuments?: Array<{
-    id: string
-    tableName: string
-    text: string
-    similarity: number
-    documentType: string
-  }>
-  data?: Array<Record<string, any>>
-}
-
-interface SearchResponse {
-  success: boolean
-  query: string
-  sqlQuery?: string
-  answer: string
-  data: any[]
-  chatHistory: ChatMessage[]
-  relevantDocuments?: Array<{
-    id: string
-    tableName: string
-    text: string
-    similarity: number
-    documentType: string
-  }>
-  searchStats?: {
-    totalDocumentsFound: number
-    minCosineThreshold: number
-    topK: number
-  }
-}
 
 interface ClearResponse {
   success: boolean
@@ -60,13 +25,13 @@ interface ClearResponse {
 }
 
 type ChatContextProps = {
-  messages: ChatMessage[]
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+  messages: ChatHistory[]
+  setMessages: Dispatch<SetStateAction<ChatHistory[]>>
   isLoading: boolean
   isSearching: boolean
   sendMessage: (query: string, projectId: string, location?: { district: string[], province: string[] }) => Promise<void>
   clearChatHistory: (projectId?: string) => Promise<void>
-  chatHistory: ChatMessage[]
+  // chatHistory: ChatMessage[]
   error: string | null
 
   map: Map | null
@@ -86,13 +51,6 @@ type ChatContextProps = {
   handleClearChat: () => Promise<void>
   handleKeyDown: React.KeyboardEventHandler<HTMLInputElement>
 
-  // Data Popover Logic
-  getDataColumns: (data?: Array<Record<string, any>>) => string[]
-  hasData: (data?: Array<Record<string, any>>) => boolean
-
-  // RAG Popover Logic
-  hasRagDocuments: (ragDocuments?: Array<{ id: string, tableName: string, text: string, similarity: number, documentType: string }>) => boolean
-
   // SQL Popover Logic
   copyToClipboard: (text: string) => void
 }
@@ -104,7 +62,7 @@ export const ChatContext = createContext<ChatContextProps>({
   isSearching: false,
   sendMessage: async () => { },
   clearChatHistory: async () => { },
-  chatHistory: [],
+  // chatHistory: [],
   error: null,
 
   map: null,
@@ -124,19 +82,12 @@ export const ChatContext = createContext<ChatContextProps>({
   handleClearChat: async () => { },
   handleKeyDown: () => { },
 
-  // Data Popover Logic
-  getDataColumns: () => [],
-  hasData: () => false,
-
-  // RAG Popover Logic
-  hasRagDocuments: () => false,
-
   // SQL Popover Logic
   copyToClipboard: () => { },
 })
 
 // Fetcher function for SWR
-const chatHistoryFetcher = async (url: string): Promise<{ success: boolean; chatHistory: ChatMessage[] }> => {
+const chatHistoryFetcher = async (url: string): Promise<{ success: boolean, chatHistory: ChatHistory[] }> => {
   const response = await fetch(url, {
     credentials: 'include',
   })
@@ -148,7 +99,7 @@ const chatHistoryFetcher = async (url: string): Promise<{ success: boolean; chat
 }
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatHistory[]>([]);
   const [isLoading, setIsLoading] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -161,7 +112,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const [inputValue, setInputValue] = useState('')
   const [currentLocation, setCurrentLocation] = useState<{ district: string[], province: string[] }>({ district: [], province: [] })
 
-  const { data: chatHistoryData, error: chatHistoryError, mutate: mutateChatHistory } = useSWR<{ success: boolean; chatHistory: ChatMessage[] }>(
+  const { data: chatHistoryData, error: chatHistoryError, mutate: mutateChatHistory } = useSWR<{ chatHistory: ChatHistory[] }>(
     '/api/chat-history?projectId=DEFAULT',
     chatHistoryFetcher,
     {
@@ -227,15 +178,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     setIsSearching(true)
     setError(null)
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+    setMessages(prev => [...prev, {
+      id: uuidv4(),
       role: 'user',
+      projectId,
+      userId: '',
       content: query,
-      timestamp: new Date().toISOString(),
-      projectId
-    }
-
-    setMessages(prev => [...prev, userMessage])
+      sqlQuery: null,
+      ragNodeDocuments: null,
+      ragMinioDocuments: null,
+      improvedPrompt: null,
+      data: null,
+      timestamp: new Date()
+    }])
 
     try {
       const searchRequest: SearchRequest = {
@@ -243,8 +198,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         min_cosine: 0.2,
         top_k: 10,
         projectId,
-        chatHistory: messages,
-        location
+        location,
+        timestamp: new Date()
       }
 
       const response = await fetch('/api/ai/search', {
@@ -260,33 +215,18 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         return
       }
 
-      const data: SearchResponse = await response.json()
+      await response.json()
+      await mutateChatHistory()
 
-      if (data.success) {
-        setMessages(data.chatHistory)
-        await mutateChatHistory()
-      } else {
-        toast.error('Search request failed')
-      }
     } catch (err) {
       console.error('Error sending message:', err)
       const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
       setError(errorMessage)
-      setMessages(prev => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `Sorry, I encountered an error: ${errorMessage}`,
-          timestamp: new Date().toISOString(),
-          projectId,
-        },
-      ])
       toast.error('Failed to send message')
     } finally {
       setIsSearching(false)
     }
-  }, [messages, mutateChatHistory])
+  }, [mutateChatHistory])
 
   const clearChatHistory = useCallback(async (projectId?: string) => {
     setIsLoading(true)
@@ -472,25 +412,6 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [handleSendMessage])
 
-  // Data Popover Functions
-  const getDataColumns = useCallback((data?: Array<Record<string, any>>) => {
-    if (!data || data.length === 0) return []
-    const allKeys = new Set<string>()
-    data.forEach(row => {
-      Object.keys(row).forEach(key => allKeys.add(key))
-    })
-    return Array.from(allKeys)
-  }, [])
-
-  const hasData = useCallback((data?: Array<Record<string, any>>) => {
-    return Boolean(data && data.length > 0)
-  }, [])
-
-  // RAG Popover Functions
-  const hasRagDocuments = useCallback((ragDocuments?: Array<{ id: string, tableName: string, text: string, similarity: number, documentType: string }>) => {
-    return Boolean(ragDocuments && ragDocuments.length > 0)
-  }, [])
-
   // SQL Popover Functions
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text)
@@ -523,17 +444,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       handleClearChat,
       handleKeyDown,
 
-      // Data Popover Logic
-      getDataColumns,
-      hasData,
-
-      // RAG Popover Logic
-      hasRagDocuments,
-
       // SQL Popover Logic
       copyToClipboard,
     }),
-    [messages, isLoading, isSearching, sendMessage, clearChatHistory, chatHistory, error, map, vectorSource, isMapLoading, handleFileUpload, fitToData, inputValue, setInputValue, currentLocation, setCurrentLocation, handleFileSelect, handleSendMessage, handleClearLocation, handleClearChat, handleKeyDown, getDataColumns, hasData, hasRagDocuments, copyToClipboard]
+    [messages, isLoading, isSearching, sendMessage, clearChatHistory, chatHistory, error, map, vectorSource, isMapLoading, handleFileUpload, fitToData, inputValue, setInputValue, currentLocation, setCurrentLocation, handleFileSelect, handleSendMessage, handleClearLocation, handleClearChat, handleKeyDown, copyToClipboard]
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

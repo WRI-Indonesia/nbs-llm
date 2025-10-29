@@ -72,16 +72,19 @@ async function main() {
   )
   LANGUAGE sql
   AS $$
+    WITH q AS (
+      SELECT query_embedding_str::vector(3072) AS qv
+    )
     SELECT
       nd.id,
       nd."nodeId"::TEXT AS node_id,
       nd.text::TEXT AS document_text,
-      1 - (nd.embedding <=> query_embedding_str::vector(3072)) AS similarity
-    FROM "node_docs" nd
+      1 - (nd.embedding <=> q.qv) AS similarity
+    FROM "node_docs" nd, q
     WHERE nd.embedding IS NOT NULL
       AND (node_id_filter IS NULL OR nd."nodeId" = node_id_filter)
-      AND (1 - (nd.embedding <=> query_embedding_str::vector(3072))) >= similarity_threshold
-    ORDER BY similarity DESC
+      AND (1 - (nd.embedding <=> q.qv)) >= similarity_threshold
+    ORDER BY nd.embedding <=> q.qv  -- index-friendly
     LIMIT top_k;
   $$;
   `);

@@ -171,7 +171,8 @@ model ChatHistory {
   role           String
   content        String
   sqlQuery       String?
-  ragDocuments   Json?
+  ragNodeDocuments   Json?
+  ragMinioDocuments   Json?
   improvedPrompt String?
   data           Json?
   timestamp      DateTime @default(now())

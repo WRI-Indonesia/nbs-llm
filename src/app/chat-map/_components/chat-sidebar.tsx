@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { useChat } from '../_hooks/useChat'
 import { SqlPopover } from './sql-popover'
-import { RagPopover } from './rag-popover'
+import { RagNodePopover } from './rag-node-popover'
 import { DataPopover } from './data-popover'
+import { RagMinioPopover } from './rag-minio-popover'
 
 export function ChatSidebar() {
   const {
@@ -57,9 +58,9 @@ export function ChatSidebar() {
             <p className="text-sm">Start a conversation about your data now!</p>
           </div>
         ) : (
-          messages.map((message, index) => (
+          messages.map((message) => (
             <div
-              key={message.id || `message-${index}-${message.timestamp}`}
+              key={message.id}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <Card
@@ -73,9 +74,10 @@ export function ChatSidebar() {
                   </p>
                   {message.role === 'assistant' && (
                     <div className="flex items-center">
-                      <SqlPopover sqlQuery={message.sqlQuery} />
-                      <RagPopover ragDocuments={message.ragDocuments} />
-                      <DataPopover data={message.data} />
+                      <SqlPopover id={message.id} />
+                      <RagNodePopover id={message.id} />
+                      <RagMinioPopover id={message.id} />
+                      <DataPopover id={message.id} />
                     </div>
                   )}
                 </div>

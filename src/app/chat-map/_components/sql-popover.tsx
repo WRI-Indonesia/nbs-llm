@@ -6,15 +6,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Card } from "@/components/ui/card"
 import { PiFileSqlDuotone } from "react-icons/pi";
 import { useChat } from "../_hooks/useChat"
+import { useMemo } from "react"
 
-interface SqlPopoverProps {
-    sqlQuery?: string
-}
+export function SqlPopover({ id }: { id?: string }) {
+    const { copyToClipboard, messages } = useChat()
 
-export function SqlPopover({ sqlQuery }: SqlPopoverProps) {
-    const { copyToClipboard } = useChat()
-    
-    if (!sqlQuery) return null
+    const sqlQuery = useMemo(() => messages.find((m) => m.id === id)?.sqlQuery, [id, messages])
+
+    if (!sqlQuery) return null;
 
     return (
         <Popover>

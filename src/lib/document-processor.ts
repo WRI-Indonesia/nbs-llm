@@ -87,16 +87,17 @@ async function processPDFFile(
       const embedding = await embeddingModel.getTextEmbedding(chunk)
       const embeddingJson = JSON.stringify(embedding)
 
-      // Store in database
-      await prisma.minioDocs.create({
-        data: {
-          projectId,
-          fileName: fileNameOnly,
-          text: chunk,
-          embedding: embeddingJson,
-        },
-      })
+      await prisma.$queryRawUnsafe(`
+      INSERT INTO "minio_docs" ("projectId", "fileName", "text", "embedding")
+      VALUES ($1, $2, $3, ($4)::vector(3072))
+      `,
+        projectId,
+        fileNameOnly,
+        chunk,
+        embeddingJson
+      )
       documentCount++
+
     }
   }
 
@@ -239,11 +240,11 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     // Get processed file names
     const jobData = await prisma.indexingJob.findUnique({
       where: { id: jobId },
-      select: { 
-        processedFileNames: true, 
-        processedFiles: true, 
-        successfulFiles: true, 
-        totalDocuments: true 
+      select: {
+        processedFileNames: true,
+        processedFiles: true,
+        successfulFiles: true,
+        totalDocuments: true
       }
     })
 
@@ -252,7 +253,7 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     let successfulFiles = jobData?.successfulFiles || 0
     let totalDocuments = jobData?.totalDocuments || 0
     let failedFiles = 0
-    
+
     // If resuming a paused job, show that info
     if (processedFiles > 0) {
       await log.info(`RESUMING job from paused state`)
@@ -264,7 +265,7 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     for (let i = 0; i < objectsList.length; i++) {
       const fileObj = objectsList[i]
       const fileNumber = i + 1
-      
+
       // Check if job has been cancelled or paused
       const jobCheck = await prisma.indexingJob.findUnique({
         where: { id: jobId },
@@ -381,7 +382,7 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     await log.info(`Failed: ${failedFiles}`)
     await log.info(`Total documents indexed: ${totalDocuments}`)
     await log.info(`Completed at: ${new Date().toISOString()}`)
-    
+
     return { success: true, totalFiles: objectsList.length, totalDocuments }
 
   } catch (error) {

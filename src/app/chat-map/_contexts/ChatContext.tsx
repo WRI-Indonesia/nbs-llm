@@ -12,7 +12,7 @@ import VectorSource from 'ol/source/Vector'
 import { fromLonLat } from 'ol/proj'
 import { Style, Stroke, Fill } from 'ol/style'
 import { processZipFile, addShapefileToMap, ShapefileData } from '../_utils/shapefile-utils'
-import { SearchRequest } from "@/app/api/ai/search/route"
+import type { SearchRequest } from "@/app/api/ai/search/_utils/types"
 
 interface ChatMessage {
   id: string
@@ -383,28 +383,28 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       const data = await response.json()
       if (data.success && data.data.length > 0) {
         // Extract districts and provinces from the results
-        const districts = data.data.map((location: {district: string, province: string}) => location.district).filter(Boolean) as string[]
-        const provinces = data.data.map((location: {district: string, province: string}) => location.province).filter(Boolean) as string[]
-        
+        const districts = data.data.map((location: { district: string, province: string }) => location.district).filter(Boolean) as string[]
+        const provinces = data.data.map((location: { district: string, province: string }) => location.province).filter(Boolean) as string[]
+
         // Remove duplicates
         const uniqueDistricts = [...new Set(districts)]
         const uniqueProvinces = [...new Set(provinces)]
-        
+
         // Set the current location
         setCurrentLocation({
           district: uniqueDistricts,
           province: uniqueProvinces
         })
-        
+
         toast.success(`Found ${data.count} matching locations. Location data is now active for your queries.`)
       } else {
         toast.info('No matching locations found in geo database')
-        setCurrentLocation({district: [], province: []})
+        setCurrentLocation({ district: [], province: [] })
       }
     } catch (error) {
       console.error('Error searching geo data:', error)
       toast.error('Failed to search geo locations')
-      setCurrentLocation({district: [], province: []})
+      setCurrentLocation({ district: [], province: [] })
     }
   }, [])
 
@@ -424,10 +424,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     try {
       // First upload and process the file
       await handleFileUpload(file)
-      
+
       // Then extract geo data and search for matching locations
       await searchGeoDataFromZip(file)
-      
+
       toast.success(`Successfully processed ${file.name}`)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to process the uploaded file'
@@ -449,7 +449,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }, [inputValue, sendMessage, currentLocation])
 
   const handleClearLocation = useCallback(() => {
-    setCurrentLocation({district: [], province: []})
+    setCurrentLocation({ district: [], province: [] })
     // Clear map data
     if (vectorSource) {
       vectorSource.clear()

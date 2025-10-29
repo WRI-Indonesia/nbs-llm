@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { ChatMessage } from './response-utils'
+import type { ChatMessage } from './types'
 
 /**
  * Gets chat history from database for a specific user and project
@@ -94,6 +94,6 @@ export function createUpdatedChatHistory(
 ): ChatMessage[] {
   const userMessage = createChatMessage('user', userQuery)
   const assistantMessage = createChatMessage('assistant', assistantResponse, options)
-  
+
   return [...existingHistory, userMessage, assistantMessage]
 }

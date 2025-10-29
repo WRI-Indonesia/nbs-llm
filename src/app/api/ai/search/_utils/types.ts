@@ -3,6 +3,8 @@ export type NodeDocMatch = {
     node_id: string
     document_text: string
     similarity: number
+    vector_score?: number
+    keyword_score?: number
 }
 
 export type MinioDocMatch = {
@@ -10,6 +12,8 @@ export type MinioDocMatch = {
     file_name: string
     document_text: string
     similarity: number
+    vector_score?: number
+    keyword_score?: number
 }
 
 export interface SearchRequest {
@@ -22,4 +26,6 @@ export interface SearchRequest {
         district: string[]
         province: string[]
     }
+    use_hybrid?: boolean  // Enable hybrid search (default: true)
+    hybrid_alpha?: number  // Weight for vector search (0.0 = only keyword, 1.0 = only vector, default: 0.7)
 }

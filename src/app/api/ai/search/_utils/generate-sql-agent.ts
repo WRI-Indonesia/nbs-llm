@@ -32,6 +32,9 @@ Instructions:
 10. ALWAYS make sure to include LIMIT, by default LIMIT 10 at the end of the query if the user's query is not a count query
 11. Always use ILIKE instead of WHERE for text matching.
 12. When using ILIKE, wrap the search term with %% (e.g., ILIKE '%pattern%'), ensuring the query matches parts of the text case-insensitively.
+13. For date/timestamp columns, use date comparisons: =, >, <, >=, <=, BETWEEN, or date functions like DATE_TRUNC, EXTRACT
+14. NEVER use ILIKE, LIKE, or ~~* on numeric or date columns - only on text columns
+15. When filtering by location names (districts, provinces), use ILIKE only if the column is TEXT/VARCHAR
 
 SQL Query:`
 

@@ -20,7 +20,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SearchRequest = await request.json()
-    const { query, min_cosine = 0.2, top_k = 5, projectId, location = { district: [], province: [] }, timestamp = new Date() } = body
+    const { 
+      query, 
+      min_cosine = 0.2, 
+      top_k = 5, 
+      projectId, 
+      location = { district: [], province: [] }, 
+      timestamp = new Date(),
+      use_hybrid = true,  // Default to hybrid search
+      hybrid_alpha = 0.7  // Default 70% vector, 30% keyword
+    } = body
 
     if (!query) {
       return createErrorResponse('Query is required', undefined, 400)
@@ -36,6 +45,10 @@ export async function POST(request: NextRequest) {
 
     if (top_k < 1 || top_k > 20) {
       return createErrorResponse('top_k must be between 1 and 20', undefined, 400)
+    }
+
+    if (use_hybrid && (hybrid_alpha < 0 || hybrid_alpha > 1)) {
+      return createErrorResponse('hybrid_alpha must be between 0 and 1', undefined, 400)
     }
 
     // save user chat into DB
@@ -87,29 +100,66 @@ export async function POST(request: NextRequest) {
     const queryEmbedding = await generateQueryEmbedding(newQuery)
     const embeddingStr = JSON.stringify(queryEmbedding);
 
-    const relevantNodeDocs = await prisma.$queryRaw<NodeDocMatch[]>(
-      Prisma.sql`
-      SELECT 
-        * FROM 
-        match_node_docs(
-          ${embeddingStr}::TEXT,
-          ${top_k}::INT,         
-          ${min_cosine}::FLOAT 
-        );
-    `
-    );
+    // Use hybrid search if enabled, otherwise fall back to pure vector search
+    let relevantNodeDocs: NodeDocMatch[]
+    let relevantMinioDocs: MinioDocMatch[]
 
-    const relevantMinioDocs = await prisma.$queryRaw<MinioDocMatch[]>(
-      Prisma.sql`
-      SELECT 
-        * FROM 
-        match_minio_docs(
-          ${embeddingStr}::TEXT,
-          ${top_k}::INT,         
-          ${min_cosine}::FLOAT 
-        );
-    `
-    );
+    if (use_hybrid) {
+      // Hybrid search: combines vector similarity with keyword search (BM25-like)
+      relevantNodeDocs = await prisma.$queryRaw<NodeDocMatch[]>(
+        Prisma.sql`
+        SELECT 
+          * FROM 
+          match_node_docs_hybrid(
+            ${newQuery}::TEXT,
+            ${embeddingStr}::TEXT,
+            ${top_k}::INT,         
+            ${min_cosine}::FLOAT,
+            NULL,  -- node_id_filter
+            ${hybrid_alpha}::FLOAT
+          );
+      `
+      );
+
+      relevantMinioDocs = await prisma.$queryRaw<MinioDocMatch[]>(
+        Prisma.sql`
+        SELECT 
+          * FROM 
+          match_minio_docs_hybrid(
+            ${newQuery}::TEXT,
+            ${embeddingStr}::TEXT,
+            ${top_k}::INT,         
+            ${min_cosine}::FLOAT,
+            ${hybrid_alpha}::FLOAT
+          );
+      `
+      );
+    } else {
+      // Pure vector search (original behavior)
+      relevantNodeDocs = await prisma.$queryRaw<NodeDocMatch[]>(
+        Prisma.sql`
+        SELECT 
+          * FROM 
+          match_node_docs(
+            ${embeddingStr}::TEXT,
+            ${top_k}::INT,         
+            ${min_cosine}::FLOAT 
+          );
+      `
+      );
+
+      relevantMinioDocs = await prisma.$queryRaw<MinioDocMatch[]>(
+        Prisma.sql`
+        SELECT 
+          * FROM 
+          match_minio_docs(
+            ${embeddingStr}::TEXT,
+            ${top_k}::INT,         
+            ${min_cosine}::FLOAT 
+          );
+      `
+      );
+    }
 
     // Initiate data as empty array
     let data = []

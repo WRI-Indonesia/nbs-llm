@@ -206,6 +206,60 @@ jobs:
           CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
           EOF
 
+          echo "🧩 Writing docker-compose.yml..."
+          cat > docker-compose.yml <<'EOF'
+
+          services:
+            redis:
+              image: redis:7-alpine
+              container_name: nbs-llm-redis
+              ports:
+                - "6379:6379"
+              volumes:
+                - redis-data:/data
+              command: redis-server --appendonly yes
+              restart: unless-stopped
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 3s
+                retries: 5
+
+            nbs-llm:
+              image: ghcr.io/wri-indonesia/nbs-llm:latest
+              container_name: nbs-llm
+              env_file:
+                - .env.production
+              depends_on:
+                redis:
+                  condition: service_healthy
+              expose:
+                - "3000"
+              networks:
+                - proxy
+              restart: unless-stopped
+
+            nbs-llm-worker:
+              image: ghcr.io/wri-indonesia/nbs-llm-worker:latest
+              container_name: nbs-llm-worker
+              env_file:
+                - .env.production
+              environment:
+                - REDIS_HOST=redis
+                - REDIS_PORT=6379
+              depends_on:
+                redis:
+                  condition: service_healthy
+              restart: unless-stopped
+
+          volumes:
+            redis-data:
+
+          networks:
+            proxy:
+              external: true
+          EOF
+
           echo "📥 Pulling latest images (all services)..."
           docker compose pull || {
             echo "❌ Failed to pull Docker image"

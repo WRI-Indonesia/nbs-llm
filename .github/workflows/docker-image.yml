@@ -155,61 +155,45 @@ jobs:
           }
           echo "🧩 Writing .env.production..."
           cat > .env.production <<EOF
-          # NextAuth Configuration
-          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
-          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
-          
-          # Google OAuth
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          
-          # Database
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GEO_DATABASE_URL: ${{ secrets.GEO_DATABASE_URL }}
-          
-          # OpenAI
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          REPROMPT_AGENT_MODEL: ${{ secrets.REPROMPT_AGENT_MODEL }}
-          EMBED_MODEL_NAME: ${{ secrets.EMBED_MODEL_NAME }}
-          SQL_GENERATOR_AGENT_MODEL: ${{ secrets.SQL_GENERATOR_AGENT_MODEL }}
-          SUMMARIZATION_MODEL: ${{ secrets.SUMMARIZATION_MODEL }}
-          SUMMARIZATION_MODEL_ENDPOINT: ${{ secrets.SUMMARIZATION_MODEL_ENDPOINT }}
-          
-          # Gmail
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          SMTP_FROM: ${{ secrets.SMTP_FROM }}
-          
-          # Minio
-          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_REGION: ${{ secrets.MINIO_REGION }}
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
-          MINIO_STORAGE_PREFIX: ${{ secrets.MINIO_STORAGE_PREFIX }}
-          MINIO_PUBLIC_BROWSER: ${{ secrets.MINIO_PUBLIC_BROWSER }}
-
-          # Advanced RAG
-          REDIS_HOST: ${{ secrets.REDIS_HOST }}
-          REDIS_PORT: ${{ secrets.REDIS_PORT }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          
-          USE_HYBRID_SEARCH: ${{ secrets.USE_HYBRID_SEARCH }}
-          HYBRID_MIN_COSINE: ${{ secrets.HYBRID_MIN_COSINE }}
-          HYBRID_TOP_K: ${{ secrets.HYBRID_TOP_K }}
-          HYBRID_ALPHA: ${{ secrets.HYBRID_ALPHA }}
-
-          RERANK_ENABLED: ${{ secrets.RERANK_ENABLED }}
-          RERANK_TOPN: ${{ secrets.RERANK_TOPN }}
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-          RERANK_MODEL_NAME: ${{ secrets.RERANK_MODEL_NAME }}
-
-          CACHE_ENABLED: ${{ secrets.CACHE_ENABLED }}
-          SEMANTIC_TOPK: ${{ secrets.SEMANTIC_TOPK }}
-          CACHE_TTL_SEMRETR: ${{ secrets.CACHE_TTL_SEMRETR }}
+          NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          GEO_DATABASE_URL=${{ secrets.GEO_DATABASE_URL }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          REPROMPT_AGENT_MODEL=${{ secrets.REPROMPT_AGENT_MODEL }}
+          EMBED_MODEL_NAME=${{ secrets.EMBED_MODEL_NAME }}
+          SQL_GENERATOR_AGENT_MODEL=${{ secrets.SQL_GENERATOR_AGENT_MODEL }}
+          SUMMARIZATION_MODEL=${{ secrets.SUMMARIZATION_MODEL }}
+          SUMMARIZATION_MODEL_ENDPOINT=${{ secrets.SUMMARIZATION_MODEL_ENDPOINT }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_FROM=${{ secrets.SMTP_FROM }}
+          MINIO_ENDPOINT=${{ secrets.MINIO_ENDPOINT }}
+          MINIO_REGION=${{ secrets.MINIO_REGION }}
+          MINIO_ACCESS_KEY=${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY=${{ secrets.MINIO_SECRET_KEY }}
+          MINIO_BUCKET=${{ secrets.MINIO_BUCKET }}
+          MINIO_STORAGE_PREFIX=${{ secrets.MINIO_STORAGE_PREFIX }}
+          MINIO_PUBLIC_BROWSER=${{ secrets.MINIO_PUBLIC_BROWSER }}
+          REDIS_HOST=${{ secrets.REDIS_HOST }}
+          REDIS_PORT=${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          USE_HYBRID_SEARCH=${{ secrets.USE_HYBRID_SEARCH }}
+          HYBRID_MIN_COSINE=${{ secrets.HYBRID_MIN_COSINE }}
+          HYBRID_TOP_K=${{ secrets.HYBRID_TOP_K }}
+          HYBRID_ALPHA=${{ secrets.HYBRID_ALPHA }}
+          RERANK_ENABLED=${{ secrets.RERANK_ENABLED }}
+          RERANK_TOPN=${{ secrets.RERANK_TOPN }}
+          HF_API_TOKEN=${{ secrets.HF_API_TOKEN }}
+          RERANK_MODEL_NAME=${{ secrets.RERANK_MODEL_NAME }}
+          CACHE_ENABLED=${{ secrets.CACHE_ENABLED }}
+          SEMANTIC_TOPK=${{ secrets.SEMANTIC_TOPK }}
+          CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
           EOF
           echo "📥 Pulling latest image..."
           docker compose pull nbs-llm || {

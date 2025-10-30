@@ -4,16 +4,37 @@ export async function generateAnswer(userQuery: string, data: any[], context: an
     const SEA_LLM_MODEL = (process.env.SUMMARIZATION_MODEL || '').trim()
 
     try {
+        // Helper function to truncate text to approximate token limit
+        // Rough estimate: 1 token ≈ 4 characters
+        const truncateToTokens = (text: string, maxTokens: number): string => {
+            const maxChars = maxTokens * 4
+            if (text.length <= maxChars) return text
+            return text.substring(0, maxChars - 3) + '...'
+        }
+
+        // Limit data rows to prevent token overflow
+        // Take first 5 rows and truncate each row's string representation
+        const limitedData = data.slice(0, 5).map(row => {
+            const rowStr = JSON.stringify(row)
+            return truncateToTokens(rowStr, 200) // ~200 tokens per row
+        })
+
+        // Limit context documents to prevent token overflow
+        // Take first 3 documents and truncate each to ~500 tokens
+        const limitedContext = context.slice(0, 3).map(doc => {
+            return truncateToTokens(doc, 500)
+        })
+
         // 1. Construct a detailed prompt that strongly integrates data and context
-        const contextString = context.length > 0
-            ? `\n\n--- Relevant Context ---\n${JSON.stringify(context, null, 2)}`
+        const contextString = limitedContext.length > 0
+            ? `\n\n--- Relevant Context (${limitedContext.length} snippets) ---\n${limitedContext.join('\n\n---\n\n')}`
             : "";
 
-        const dataString = data.length > 0
-            ? `\n\n--- Current Query Data ---\n${JSON.stringify(data, null, 2)}`
+        const dataString = limitedData.length > 0
+            ? `\n\n--- Current Query Data (${limitedData.length} rows) ---\n${JSON.stringify(limitedData, null, 2)}`
             : "";
 
-        if (data.length === 0) {
+        if (data.length === 0 && context.length === 0) {
             return "No data found for this query";
         }
 

@@ -179,18 +179,18 @@ export async function POST(request: NextRequest) {
         data = await executeSQLQuery(sqlQuery, projectId)
       } catch (executionError) {
         // assistant
-        await saveChatHistoryToDB({
-          role: 'assistant',
-          projectId,
-          userId: user.id,
-          content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`,
-          sqlQuery,
-          ragNodeDocuments: relevantNodeDocs,
-          ragMinioDocuments: relevantMinioDocs,
-          improvedPrompt: null,
-          data,
-          timestamp: new Date()
-        })
+      await saveChatHistoryToDB({
+        role: 'assistant',
+        projectId,
+        userId: user.id,
+        content: `Query generated but execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}`,
+        sqlQuery,
+        ragNodeDocuments: relevantNodeDocs,
+        ragMinioDocuments: relevantMinioDocs,
+        improvedPrompt: null,
+        data,
+        timestamp: new Date()
+      })
 
         return NextResponse.json({ status: 'success' })
       }

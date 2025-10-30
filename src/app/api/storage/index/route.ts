@@ -3,7 +3,14 @@ import { prisma } from '@/lib/prisma'
 import { isAdmin } from '@/lib/auth'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { indexQueue } from '@/lib/queue'
+// Lazy-create queue at runtime to avoid build-time connections
+async function getIndexQueue() {
+  const mod = await import('@/lib/queue')
+  if (typeof (mod as any).createIndexQueue !== 'function') {
+    throw new Error('Queue factory not available')
+  }
+  return (mod as any).createIndexQueue()
+}
 import { getMinioClient, initBucket } from '@/lib/minio'
 
 const BUCKET_NAME = process.env.MINIO_BUCKET ?? ''
@@ -77,6 +84,7 @@ export async function GET() {
 
     // Add to queue with the same jobId (so control endpoints can find it)
     console.log(`Adding indexing job ${job.id} to queue`)
+    const indexQueue = await getIndexQueue()
     const queuedJob = await indexQueue.add(
       'process-indexing',
       {

@@ -216,6 +216,11 @@ jobs:
             ghcr.io/wri-indonesia/nbs-llm:latest \
             npx prisma migrate deploy
 
+          echo "🌱 Seeding database..."
+          docker run --rm --env-file .env.production --network host \
+            ghcr.io/wri-indonesia/nbs-llm:latest \
+            sh -c 'npm i -g tsx && PRISMA_SEED="tsx prisma/seed.ts" npx prisma db seed'
+
           echo "🧹 Cleaning up unused images..."
           docker image prune -f
           echo "✅ Deployment completed successfully!"

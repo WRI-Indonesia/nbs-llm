@@ -10,7 +10,7 @@
     "worker": "tsx src/workers/index-worker.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.5",

@@ -1,3 +1,6 @@
+-- Create extension for vector
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'USER');
 

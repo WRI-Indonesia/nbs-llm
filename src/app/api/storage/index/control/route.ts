@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isAdmin } from '@/lib/auth'
-import { indexQueue } from '@/lib/queue'
+async function getIndexQueue() {
+  const mod = await import('@/lib/queue')
+  if (typeof (mod as any).createIndexQueue !== 'function') {
+    throw new Error('Queue factory not available')
+  }
+  return (mod as any).createIndexQueue()
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -55,6 +61,7 @@ export async function POST(request: NextRequest) {
       // Attempt to remove any leftover job with the same ID then re-add.
       // Use the same jobId so later cancels/resumes match easily.
       try {
+        const indexQueue = await getIndexQueue()
         const existing = await indexQueue.getJob(jobId)
         if (existing) {
           try {
@@ -75,6 +82,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        const indexQueue = await getIndexQueue()
         await indexQueue.add(
           'process-indexing',
           {
@@ -107,6 +115,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        const indexQueue = await getIndexQueue()
         const queued = await indexQueue.getJob(jobId)
         if (queued) {
           try {

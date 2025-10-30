@@ -13,6 +13,25 @@ console.log('🧩 Ensuring pgvector + similarity functions...');
 // 0) extension (safe to re-run)
 await prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS vector;`);
 
+// Ensure required base tables exist for first-time setup (minimal subset)
+// 1) minio_docs
+await prisma.$executeRawUnsafe(`
+CREATE TABLE IF NOT EXISTS "minio_docs" (
+  id SERIAL PRIMARY KEY,
+  "projectId" TEXT NOT NULL,
+  text TEXT NOT NULL,
+  embedding vector(3072),
+  "createdAt" TIMESTAMP DEFAULT now(),
+  "updatedAt" TIMESTAMP DEFAULT now(),
+  "fileName" TEXT DEFAULT '' ,
+  "answerRelevance" DOUBLE PRECISION,
+  "averageScore" DOUBLE PRECISION,
+  "contextPrecision" DOUBLE PRECISION,
+  "contextRecall" DOUBLE PRECISION,
+  faithfulness DOUBLE PRECISION
+);
+`);
+
 // 1) Ensure mem_semantic table exists (3072-d; no vector index due to 2000-d limit)
 await prisma.$executeRawUnsafe(`
 CREATE TABLE IF NOT EXISTS "mem_semantic" (
@@ -39,11 +58,19 @@ ON "mem_semantic" USING hnsw (embedding vector_l2_ops) WITH (m = 16, ef_construc
 \`);
 */
 
-// ---------- minio_docs ----------
+
+// Ensure node_docs table exists (minimal schema for first-time DBs)
 await prisma.$executeRawUnsafe(`
-  ALTER TABLE "minio_docs"
-  ALTER COLUMN embedding TYPE vector(3072) USING embedding::vector(3072);
+CREATE TABLE IF NOT EXISTS "node_docs" (
+  id SERIAL PRIMARY KEY,
+  "nodeId" TEXT NOT NULL,
+  text TEXT NOT NULL,
+  embedding vector(3072),
+  "createdAt" TIMESTAMP DEFAULT now(),
+  "updatedAt" TIMESTAMP DEFAULT now()
+);
 `);
+
 
 // Function for minio_docs
 await prisma.$executeRawUnsafe(`

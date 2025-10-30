@@ -103,32 +103,36 @@ model FlowEdge {
 }
 
 model NodeDocs {
-  id        Int                    @id @default(autoincrement())
-  nodeId    String
-  text      String
-  embedding Unsupported("vector")?
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @default(now()) @updatedAt
-  node      FlowNode               @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  id                 Int                      @id @default(autoincrement())
+  nodeId             String
+  text               String
+  embedding          Unsupported("vector")?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @default(now()) @updatedAt
+  text_search_vector Unsupported("tsvector")?
+  node               FlowNode                 @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
+  @@index([text_search_vector], map: "node_docs_text_search_idx", type: Gin)
   @@map("node_docs")
 }
 
 model MinioDocs {
-  id               Int                    @id @default(autoincrement())
-  projectId        String
-  text             String
-  embedding        Unsupported("vector")?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @default(now()) @updatedAt
-  fileName         String?                @default("")
-  answerRelevance  Float?
-  averageScore     Float?
-  contextPrecision Float?
-  contextRecall    Float?
-  faithfulness     Float?
-  project          FlowProject            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                 Int                      @id @default(autoincrement())
+  projectId          String
+  text               String
+  embedding          Unsupported("vector")?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @default(now()) @updatedAt
+  fileName           String?                  @default("")
+  answerRelevance    Float?
+  averageScore       Float?
+  contextPrecision   Float?
+  contextRecall      Float?
+  faithfulness       Float?
+  text_search_vector Unsupported("tsvector")?
+  project            FlowProject              @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([text_search_vector], map: "minio_docs_text_search_idx", type: Gin)
   @@map("minio_docs")
 }
 
@@ -165,18 +169,18 @@ model IndexingLog {
 }
 
 model ChatHistory {
-  id             String   @id @default(cuid())
-  userId         String
-  projectId      String
-  role           String
-  content        String
-  sqlQuery       String?
-  ragNodeDocuments   Json?
-  ragMinioDocuments   Json?
-  improvedPrompt String?
-  data           Json?
-  timestamp      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  userId            String
+  projectId         String
+  role              String
+  content           String
+  sqlQuery          String?
+  ragNodeDocuments  Json?
+  ragMinioDocuments Json?
+  improvedPrompt    String?
+  data              Json?
+  timestamp         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chat_history")
 }
@@ -205,6 +209,19 @@ model Config {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("configs")
+}
+
+model MemSemantic {
+  id         Int                   @id @default(autoincrement())
+  user_id    String
+  project_id String
+  content    String
+  embedding  Unsupported("vector")
+  tags       String[]              @default([])
+  created_at DateTime              @default(now())
+
+  @@index([project_id], map: "mem_semantic_project_idx")
+  @@map("mem_semantic")
 }
 
 enum UserRole {

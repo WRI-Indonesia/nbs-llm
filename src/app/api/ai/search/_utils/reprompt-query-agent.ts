@@ -1,9 +1,5 @@
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
-
 /**
  * Reprompts the user query to handle Indonesian locations.
  * - Params only include districts (Kab/Kota).
@@ -14,6 +10,7 @@ export async function repromptQuery(
   question: string,
   districts: string[]
 ): Promise<{ result: string }> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const resp = await openai.responses.create({
     model: process.env.REPROMPT_AGENT_MODEL ?? "gpt-4o-mini",
     temperature: 0,

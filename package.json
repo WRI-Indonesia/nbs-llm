@@ -1,6 +1,6 @@
 {
   "name": "nbs-llm",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -10,7 +10,7 @@
     "worker": "tsx src/workers/index-worker.ts"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.5",

@@ -237,7 +237,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsSearching(false)
     }
-  }, [mutateChatHistory])
+  }, [mutateChatHistory, configData?.minCos, configData?.topK])
 
   const clearChatHistory = useCallback(async (projectId?: string) => {
     setIsLoading(true)

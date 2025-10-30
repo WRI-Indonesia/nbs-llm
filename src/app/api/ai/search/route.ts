@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 import { getCurrentUser } from '@/lib/auth'
 // import { repromptQuery } from './_utils/reprompt-query-agent'
 import { prisma } from '@/lib/prisma'
@@ -22,17 +24,36 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SearchRequest = await request.json()
-    const { 
-      query, 
-      min_cosine = process.env.HYBRID_MIN_COSINE || 0.2, 
-      top_k = process.env.HYBRID_TOP_K || 5, 
-      projectId, 
-      location = { district: [], province: [] }, 
+    // Keep the original destructure but do not rely on env defaults here
+    const {
+      query,
+      min_cosine: min_cosine_raw,
+      top_k: top_k_raw,
+      projectId,
+      location = { district: [], province: [] },
       timestamp = new Date(),
-      use_hybrid = process.env.USE_HYBRID_SEARCH || 'true',  // Default to hybrid search
-      hybrid_alpha = process.env.HYBRID_ALPHA || 0.7  // Default 70% vector, 30% keyword
+      use_hybrid: use_hybrid_raw,
+      hybrid_alpha: hybrid_alpha_raw
     } = body
 
+    // Strongly-typed knobs with env fallbacks
+    const min_cosine = typeof min_cosine_raw === 'number'
+      ? min_cosine_raw
+      : Number(min_cosine_raw ?? process.env.HYBRID_MIN_COSINE ?? 0.2)
+
+    const top_k = typeof top_k_raw === 'number'
+      ? top_k_raw
+      : Number(top_k_raw ?? process.env.HYBRID_TOP_K ?? 5)
+
+    const use_hybrid = typeof use_hybrid_raw === 'boolean'
+      ? use_hybrid_raw
+      : String(use_hybrid_raw ?? process.env.USE_HYBRID_SEARCH ?? 'true').toLowerCase() !== 'false'
+
+    const hybrid_alpha = typeof hybrid_alpha_raw === 'number'
+      ? hybrid_alpha_raw
+      : Number(hybrid_alpha_raw ?? process.env.HYBRID_ALPHA ?? 0.7)
+
+    // Now validations work with numbers/booleans
     if (!query) {
       return createErrorResponse('Query is required', undefined, 400)
     }

@@ -1,9 +1,5 @@
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-})
-
 /**
  * Generates SQL query using OpenAI based on relevant documents
  */
@@ -60,6 +56,7 @@ Instructions:
 
 SQL Query:`
 
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
         const completion = await openai.chat.completions.create({
             model: process.env.SQL_GENERATOR_AGENT_MODEL ?? "gpt-4o",
             messages: [

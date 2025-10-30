@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 import { getCurrentUser } from '@/lib/auth'
 // import { repromptQuery } from './_utils/reprompt-query-agent'
 import { prisma } from '@/lib/prisma'

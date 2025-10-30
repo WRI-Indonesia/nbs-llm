@@ -18,10 +18,6 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Initiate the database
-RUN npx prisma db push
-RUN npx prisma db seed
-
 # Build Next.js app (if present); no-op if not
 RUN npm run build || true
 

@@ -49,7 +49,7 @@ type ChatContextProps = {
   handleSendMessage: () => Promise<void>
   handleClearLocation: () => void
   handleClearChat: () => Promise<void>
-  handleKeyDown: React.KeyboardEventHandler<HTMLInputElement>
+  handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>
 
   // SQL Popover Logic
   copyToClipboard: (text: string) => void
@@ -416,7 +416,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [clearChatHistory])
 
-  const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = useCallback((e) => {
+  const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()

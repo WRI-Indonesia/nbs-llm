@@ -205,11 +205,10 @@ jobs:
             echo "❌ Failed to start container"
             exit 1
           }
-          echo "🛠 Running Prisma migrations..."
-          docker run --rm --env-file .env.production \
-            --network host \
-            ghcr.io/wri-indonesia/nbs-llm:latest \
-            npx prisma migrate deploy
+          echo "🛠 Generating Prisma client..."
+          docker compose exec -T nbs-llm npx prisma generate
+          echo "🌱 Seeding database (DDL + data, idempotent)..."
+          docker compose exec -T nbs-llm npx prisma db seed
           echo "🧹 Cleaning up unused images..."
           docker image prune -f
           echo "✅ Deployment completed successfully!"

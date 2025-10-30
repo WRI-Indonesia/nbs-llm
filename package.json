@@ -7,7 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "worker": "dotenv -e .env -- tsx src/workers/index-worker.ts"
+    "worker": "tsx src/workers/index-worker.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

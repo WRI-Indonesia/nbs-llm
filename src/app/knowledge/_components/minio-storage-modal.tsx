@@ -8,7 +8,7 @@ import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from '@
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
-import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database, PlayCircle, Settings, FileText, AlertCircle } from 'lucide-react'
+import { Upload, Trash2, RefreshCw, File, Loader2, Search, FolderOpen, X, Database, PlayCircle, Settings, FileText, AlertCircle, PauseCircle } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { Label } from '@/components/ui/label'
 
@@ -103,6 +103,9 @@ function FilesTab({
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [indexing, setIndexing] = useState(false)
+  const [pausing, setPausing] = useState(false)
+  const [resuming, setResuming] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
 
   const filteredFiles = useMemo(() => {
     if (!files) return []
@@ -172,6 +175,27 @@ function FilesTab({
     }
   }
 
+  const handleControl = async (action: 'pause' | 'resume' | 'cancel') => {
+    if (!jobStatus?.id) return
+    const actionStateSetter = action === 'pause' ? setPausing : action === 'resume' ? setResuming : setCancelling
+    actionStateSetter(true)
+    try {
+      const res = await fetch(`/api/storage/index/control?jobId=${encodeURIComponent(jobStatus.id)}&action=${action}`, { method: 'POST' })
+      const body = await res.json().catch(() => ({} as any))
+      if (!res.ok) throw new Error(body?.error || `Failed to ${action}`)
+      toast.success(body?.message || `${action[0].toUpperCase()}${action.slice(1)}d successfully`)
+      mutate('/api/storage/index/status')
+      if (action !== 'cancel') {
+        mutate(`/api/storage/index/logs?jobId=${jobStatus.id}`)
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error((err as Error).message || `Failed to ${action}`)
+    } finally {
+      actionStateSetter(false)
+    }
+  }
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex items-center justify-between gap-4 mb-4">
@@ -193,9 +217,29 @@ function FilesTab({
             </Button>
           </label>
 
-          <Button variant="default" onClick={jobStatus?.status === 'paused' ? () => mutate('/api/storage/index/control?jobId=' + jobStatus.id + '&action=resume') : handleIndex} disabled={indexing || uploading || isLoading}>
-            {jobStatus?.status === 'paused' ? (<><PlayCircle className="w-4 h-4 mr-2" />Resume</>) : (indexing || jobStatus?.status === 'processing') ? (<><Spinner className="w-4 h-4 mr-2" />Processing...</>) : (<><Database className="w-4 h-4 mr-2" />Index Files</>)}
-          </Button>
+          {jobStatus?.status === 'processing' || jobStatus?.status === 'pending' ? (
+            <>
+              <Button variant="secondary" onClick={() => handleControl('pause')} disabled={pausing || uploading || isLoading}>
+                {pausing ? (<><Spinner className="w-4 h-4 mr-2" />Pausing...</>) : (<><PauseCircle className="w-4 h-4 mr-2" />Pause</>)}
+              </Button>
+              <Button variant="destructive" onClick={() => handleControl('cancel')} disabled={cancelling || uploading || isLoading}>
+                {cancelling ? (<><Spinner className="w-4 h-4 mr-2" />Cancelling...</>) : (<><X className="w-4 h-4 mr-2" />Cancel</>)}
+              </Button>
+            </>
+          ) : jobStatus?.status === 'paused' ? (
+            <>
+              <Button variant="default" onClick={() => handleControl('resume')} disabled={resuming || uploading || isLoading}>
+                {resuming ? (<><Spinner className="w-4 h-4 mr-2" />Resuming...</>) : (<><PlayCircle className="w-4 h-4 mr-2" />Resume</>)}
+              </Button>
+              <Button variant="destructive" onClick={() => handleControl('cancel')} disabled={cancelling || uploading || isLoading}>
+                {cancelling ? (<><Spinner className="w-4 h-4 mr-2" />Cancelling...</>) : (<><X className="w-4 h-4 mr-2" />Cancel</>)}
+              </Button>
+            </>
+          ) : (
+            <Button variant="default" onClick={handleIndex} disabled={indexing || uploading || isLoading}>
+              {indexing ? (<><Spinner className="w-4 h-4 mr-2" />Starting...</>) : (<><Database className="w-4 h-4 mr-2" />Index Files</>)}
+            </Button>
+          )}
 
           <Button variant="outline" onClick={() => mutateFiles()} disabled={isLoading}>
             {isLoading ? <Spinner className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}

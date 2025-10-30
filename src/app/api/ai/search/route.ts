@@ -11,6 +11,7 @@ import { generateSQLQuery } from './_utils/generate-sql-agent'
 import { executeSQLQuery } from './_utils/sql-utils'
 import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
+import { cacheGetOrSet, sha256 } from './_utils/cache'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,13 +24,13 @@ export async function POST(request: NextRequest) {
     const body: SearchRequest = await request.json()
     const { 
       query, 
-      min_cosine = 0.2, 
-      top_k = 5, 
+      min_cosine = process.env.HYBRID_MIN_COSINE || 0.2, 
+      top_k = process.env.HYBRID_TOP_K || 5, 
       projectId, 
       location = { district: [], province: [] }, 
       timestamp = new Date(),
-      use_hybrid = true,  // Default to hybrid search
-      hybrid_alpha = 0.7  // Default 70% vector, 30% keyword
+      use_hybrid = process.env.USE_HYBRID_SEARCH || 'true',  // Default to hybrid search
+      hybrid_alpha = process.env.HYBRID_ALPHA || 0.7  // Default 70% vector, 30% keyword
     } = body
 
     if (!query) {
@@ -98,8 +99,28 @@ export async function POST(request: NextRequest) {
     * We need to generate embedding from re-prompt query agent
     * so later we can find similarity in DB
     */
-    const queryEmbedding = await generateQueryEmbedding(newQuery)
+    const embKey = `emb:v1:${process.env.SQL_GENERATOR_AGENT_MODEL || 'gpt'}:${sha256(newQuery)}`
+    const queryEmbedding = await cacheGetOrSet(embKey, 60 * 60 * 24 * 30, async () => {
+      return await generateQueryEmbedding(newQuery)
+    })
     const embeddingStr = JSON.stringify(queryEmbedding);
+
+    // Semantic cache: retrieve top semantic facts from mem_semantic and cache them short-term
+    const TTL_SEMRETR = Number(process.env.CACHE_TTL_SEMRETR ?? 60 * 30)
+    const semTopK = Number(process.env.SEMANTIC_TOPK ?? 8)
+    const semKey = `semretr:v1:${projectId}:${sha256(newQuery)}:${semTopK}`
+    const semanticSnippets = await cacheGetOrSet(semKey, TTL_SEMRETR, async () => {
+      try {
+        const rows = await prisma.$queryRawUnsafe<{ content: string }[]>(
+          `SELECT content FROM "mem_semantic" WHERE project_id = $1 ORDER BY embedding <-> ($2)::vector(3072) LIMIT ${semTopK}`,
+          projectId,
+          JSON.stringify(queryEmbedding)
+        )
+        return rows.map(r => r.content)
+      } catch {
+        return [] as string[]
+      }
+    })
 
     // Use hybrid search if enabled, otherwise fall back to pure vector search
     let relevantNodeDocs: NodeDocMatch[]
@@ -107,7 +128,9 @@ export async function POST(request: NextRequest) {
 
     if (use_hybrid) {
       // Hybrid search: combines vector similarity with keyword search (BM25-like)
-      relevantNodeDocs = await prisma.$queryRaw<NodeDocMatch[]>(
+      const retrKeyNode = `retr:node:v1:${projectId}:${sha256(newQuery)}:${top_k}:${min_cosine}:${hybrid_alpha}`
+      relevantNodeDocs = await cacheGetOrSet(retrKeyNode, 60 * 30, async () => (
+        await prisma.$queryRaw<NodeDocMatch[]>(
         Prisma.sql`
         SELECT 
           * FROM 
@@ -120,9 +143,12 @@ export async function POST(request: NextRequest) {
             ${hybrid_alpha}::FLOAT
           );
       `
-      );
+      )
+      ));
 
-      relevantMinioDocs = await prisma.$queryRaw<MinioDocMatch[]>(
+      const retrKeyMinio = `retr:minio:v1:${projectId}:${sha256(newQuery)}:${top_k}:${min_cosine}:${hybrid_alpha}`
+      relevantMinioDocs = await cacheGetOrSet(retrKeyMinio, 60 * 30, async () => (
+        await prisma.$queryRaw<MinioDocMatch[]>(
         Prisma.sql`
         SELECT 
           * FROM 
@@ -134,7 +160,8 @@ export async function POST(request: NextRequest) {
             ${hybrid_alpha}::FLOAT
           );
       `
-      );
+      )
+      ));
     } else {
       // Pure vector search (original behavior)
       relevantNodeDocs = await prisma.$queryRaw<NodeDocMatch[]>(
@@ -163,24 +190,46 @@ export async function POST(request: NextRequest) {
     }
 
     // Initiate data as empty array
-    let data = []
+    let data: any[] = []
     let sqlQuery = ''
 
     // only generate SQL Query if relevantNodeDocs is not empty
     if (relevantNodeDocs.length !== 0) {
-      // Rerank: combine schema node docs first, prioritize top-N
+      // Rerank: combine schema node docs first, prioritize top-N (guarded by flag)
+      const rerankEnabled = (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false'
       const candidateDocs = relevantNodeDocs.map((d) => ({ id: String(d.id), text: d.document_text }))
-      const reranked = await rerankDocuments(newQuery, candidateDocs, { topN: Math.min(20, candidateDocs.length) })
-      const relevantNodeDocsText = reranked.map((r) => r.text)
+      let relevantNodeDocsText: string[]
+      if (rerankEnabled) {
+        const topN = Math.min(Number(process.env.RERANK_TOPN ?? 20), candidateDocs.length)
+        const rrKey = `rr:v1:${process.env.RERANK_MODEL_NAME || 'cross-encoder/ms-marco-MiniLM-L-6-v2'}:${sha256(newQuery)}:${topN}`
+        const reranked = await cacheGetOrSet(rrKey, Number(process.env.CACHE_TTL_RERANK ?? 60 * 20), async () => (
+          await rerankDocuments(newQuery, candidateDocs, { topN })
+        ))
+        relevantNodeDocsText = reranked.map((r) => r.text)
+      } else {
+        relevantNodeDocsText = candidateDocs.map(c => c.text)
+      }
+
+      // Prepend semantic snippets (pgvector mem_semantic) to boost grounding
+      relevantNodeDocsText = [
+        ...semanticSnippets,
+        ...relevantNodeDocsText
+      ].slice(0, Math.min(20, semanticSnippets.length + relevantNodeDocsText.length))
       /**
       * GENERATE SQL AGENT
       * Generate SQL query using the relevant documents
       */
-      sqlQuery = await generateSQLQuery(newQuery, relevantNodeDocsText)
+      const sqlKey = `sqlgen:v1:${projectId}:${sha256(newQuery + '|' + relevantNodeDocsText.join('\n').slice(0, 4000))}`
+      sqlQuery = await cacheGetOrSet(sqlKey, 60 * 60 * 12, async () => (
+        await generateSQLQuery(newQuery, relevantNodeDocsText)
+      ))
 
       // Execute it and store into data
       try {
-        data = await executeSQLQuery(sqlQuery, projectId)
+        const sqlResKey = `sqlres:v1:${projectId}:${sha256(sqlQuery)}`
+        data = await cacheGetOrSet(sqlResKey, 60 * 30, async () => (
+          await executeSQLQuery(sqlQuery, projectId)
+        ))
       } catch (executionError) {
       
         const errorMessage = executionError instanceof Error ? executionError.message : 'Unknown error'
@@ -214,7 +263,11 @@ export async function POST(request: NextRequest) {
      * SUMMARIZATION AGENT
      * Combine improved user query, data from excecuted SQL, and context from RAG Minio
      */
-    const answer = await generateAnswer(newQuery, data, relevantMinioDocs.map((r) => r.document_text))
+    const ctxDocs = relevantMinioDocs.map((r) => r.document_text)
+    const sumKey = `sum:v1:${process.env.SUMMARIZATION_MODEL || 'SeaLLM'}:${sha256(newQuery + '|' + JSON.stringify(data).slice(0, 4000) + '|' + sha256(ctxDocs.join('\n').slice(0, 4000)))}`
+    const answer = await cacheGetOrSet(sumKey, 60 * 20, async () => (
+      await generateAnswer(newQuery, data, ctxDocs)
+    ))
 
     // assistant
     await saveChatHistoryToDB({

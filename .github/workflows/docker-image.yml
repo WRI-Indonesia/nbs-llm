@@ -217,7 +217,7 @@ jobs:
             exit 1
           }
           echo "🚀 Starting container..."
-          docker compose up -d nbs-llm || {
+          docker compose up -d || {
             echo "❌ Failed to start container"
             exit 1
           }

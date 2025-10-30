@@ -1,32 +1,32 @@
-FROM node:20-alpine
+# syntax=docker/dockerfile:1.4
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Copy source
+COPY . .
+
+RUN npx prisma generate
+
+# 🔐 Securely inject secret only during build
+RUN --mount=type=secret,id=openai_api_key \
+  export OPENAI_API_KEY=$(cat /run/secrets/openai_api_key) && \
+  echo "🔧 Building Next.js with secure secret..." && \
+  npm run build
+
+
+# ----------------------------
+# Final runtime image (no secrets)
+# ----------------------------
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Install build dependencies for native modules (e.g., node-gyp, tree-sitter deps)
-RUN apk add --no-cache python3 make g++
-
-# Copy package manifests and Prisma schema first for better layer caching
-COPY package*.json ./
-COPY prisma ./prisma/
-
-# Install dependencies
-RUN npm ci
-
-# Copy source code
-COPY . .
-
-# Generate Prisma Client
-RUN npx prisma generate
-
-# Build Next.js app (if present); no-op if not
-RUN npm run build
-
 ENV NODE_ENV=production
+COPY --from=builder /app ./
 
-# Expose default Next.js port (safe no-op for worker-only usage)
 EXPOSE 3000
-
-# Default to starting the Next.js app; compose/runner can override CMD for worker
-CMD ["npm", "run", "start"]
-
-
+CMD ["npm", "start"]

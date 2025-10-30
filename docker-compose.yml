@@ -23,7 +23,7 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - .env.production
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

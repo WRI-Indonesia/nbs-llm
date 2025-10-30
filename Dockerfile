@@ -19,7 +19,7 @@ COPY . .
 RUN npx prisma generate
 
 # Build Next.js app (if present); no-op if not
-RUN npm run build || true
+RUN npm run build
 
 ENV NODE_ENV=production
 

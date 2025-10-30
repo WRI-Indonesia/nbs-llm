@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 import { prisma } from '@/lib/prisma'
 import { isAdmin } from '@/lib/auth'
 import type { TableNodeData, Column } from '@/types/table-nodes'
 import OpenAI from 'openai'
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
 
 interface TableDefinition {
   name: string
@@ -46,6 +44,7 @@ Please generate PostgreSQL DDL statements that:
 Return only the SQL statements, one per line, without explanations.
 `;
 
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [

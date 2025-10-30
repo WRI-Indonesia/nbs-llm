@@ -73,7 +73,7 @@ export function ChatSidebar() {
         recognition.start()
         setIsListening(true)
       }
-    } catch (e) {
+    } catch (_e) {
       setIsListening(false)
     }
   }

@@ -1,7 +1,6 @@
 "use client"
 
 import { FileText, Lightbulb } from "lucide-react"
-import { LuBook } from "react-icons/lu"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Card } from "@/components/ui/card"

@@ -14,7 +14,6 @@ import {
   Database,
   Brain,
   Sparkles,
-  Search,
   FileText,
   ArrowRight,
   Zap,
@@ -28,11 +27,9 @@ import {
   Server,
   FileSearch,
   ArrowDown,
-  ArrowRightCircle,
   Circle,
   Clock,
   Play,
-  Loader,
 } from "lucide-react";
 
 export default function Home() {

@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     // 3) Query with geo prisma (lazy)
     const mod = await import('@/lib/geo-prisma')
     const geoPrisma = typeof (mod as any).getGeoPrisma === 'function' ? (mod as any).getGeoPrisma() : (mod as any).geoPrisma
-    const rows = await geoPrisma.$queryRawUnsafe<HitRow[]>(sql, ...params);
+    const rows = await (geoPrisma as any).$queryRawUnsafe(sql, ...params) as HitRow[];
 
     const data = rows.map((r) => ({
       district: r.district ?? '',

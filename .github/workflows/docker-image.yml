@@ -205,25 +205,6 @@ jobs:
             echo "❌ Failed to start container"
             exit 1
           }
-          # Wait for Postgres to be reachable using Prisma (respects DATABASE_URL)
-          echo "⏳ Waiting for database..."
-          docker run --rm --env-file .env.production --network host \
-            ghcr.io/wri-indonesia/nbs-llm:latest \
-            sh -lc 'for i in $(seq 1 30); do npx prisma db execute --stdin <<EOF >/dev/null 2>&1 && exit 0; echo "retry $i"; sleep 2; done; exit 1
-          SELECT 1;
-          EOF'
-
-          echo "🛠 Generating Prisma client..."
-          docker run --rm --env-file .env.production --network host \
-            -e NODE_OPTIONS=--max-old-space-size=256 \
-            ghcr.io/wri-indonesia/nbs-llm:latest \
-            npx prisma generate
-
-          echo "🌱 Seeding database..."
-          docker run --rm --env-file .env.production --network host \
-            -e NODE_OPTIONS=--max-old-space-size=256 \
-            ghcr.io/wri-indonesia/nbs-llm:latest \
-            npx prisma db seed
           echo "🧹 Cleaning up unused images..."
           docker image prune -f
           echo "✅ Deployment completed successfully!"

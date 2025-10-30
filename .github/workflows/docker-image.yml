@@ -210,6 +210,12 @@ jobs:
             exit 1
           }
 
+          echo "🌱 Deploying database..."
+          docker run --rm --env-file .env.production --network host \
+            -e NODE_OPTIONS=--max-old-space-size=256 \
+            ghcr.io/wri-indonesia/nbs-llm:latest \
+            npx prisma db deploy
+
           echo "🧹 Cleaning up unused images..."
           docker image prune -f
           echo "✅ Deployment completed successfully!"

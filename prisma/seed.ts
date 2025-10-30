@@ -59,6 +59,19 @@ ON "mem_semantic" USING hnsw (embedding vector_l2_ops) WITH (m = 16, ef_construc
 */
 
 
+// Ensure node_docs table exists (minimal schema for first-time DBs)
+await prisma.$executeRawUnsafe(`
+CREATE TABLE IF NOT EXISTS "node_docs" (
+  id SERIAL PRIMARY KEY,
+  "nodeId" TEXT NOT NULL,
+  text TEXT NOT NULL,
+  embedding vector(3072),
+  "createdAt" TIMESTAMP DEFAULT now(),
+  "updatedAt" TIMESTAMP DEFAULT now()
+);
+`);
+
+
 // Function for minio_docs
 await prisma.$executeRawUnsafe(`
 CREATE OR REPLACE FUNCTION public.match_minio_docs(

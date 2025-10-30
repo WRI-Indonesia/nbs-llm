@@ -31,7 +31,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build and push image to GHCR
+    - name: Build and push images to GHCR (web + worker)
       env:
         # NextAuth Configuration
         NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
@@ -92,7 +92,7 @@ jobs:
       run: |
         IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm
         VERSION=${GITHUB_SHA::7}
-        echo "🔧 Building $IMAGE_ID:latest and $IMAGE_ID:$VERSION"
+        echo "🔧 Building web: $IMAGE_ID:latest and $IMAGE_ID:$VERSION"
         docker build \
           --secret id=nextauth_secret,env=NEXTAUTH_SECRET \
           --secret id=nextauth_url,env=NEXTAUTH_URL \
@@ -133,9 +133,17 @@ jobs:
           --secret id=semantic_topk,env=SEMANTIC_TOPK \
           --secret id=cache_ttl_semretr,env=CACHE_TTL_SEMRETR \
           -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
-        echo "🚀 Pushing to GHCR..."
+        echo "🚀 Pushing web image to GHCR..."
         docker push $IMAGE_ID:latest
         docker push $IMAGE_ID:$VERSION
+
+        WORKER_IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm-worker
+        echo "🔧 Building worker: $WORKER_IMAGE_ID:latest and $WORKER_IMAGE_ID:$VERSION"
+        docker build -f Dockerfile.worker \
+          -t $WORKER_IMAGE_ID:latest -t $WORKER_IMAGE_ID:$VERSION .
+        echo "🚀 Pushing worker image to GHCR..."
+        docker push $WORKER_IMAGE_ID:latest
+        docker push $WORKER_IMAGE_ID:$VERSION
       
     - name: Deploy to VM
       if: github.ref == 'refs/heads/main'
@@ -198,8 +206,8 @@ jobs:
           CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
           EOF
 
-          echo "📥 Pulling latest image..."
-          docker compose pull nbs-llm || {
+          echo "📥 Pulling latest images (all services)..."
+          docker compose pull || {
             echo "❌ Failed to pull Docker image"
             exit 1
           }
@@ -210,7 +218,19 @@ jobs:
             exit 1
           }
 
-          echo "🌱 Deploying database..."
+          echo "🔌 Ensuring pgvector extension..."
+          docker run --rm --env-file .env.production --network host \
+            -e NODE_OPTIONS=--max-old-space-size=256 \
+            ghcr.io/wri-indonesia/nbs-llm:latest \
+            sh -lc 'npx prisma db execute --stdin <<"SQL"\nCREATE EXTENSION IF NOT EXISTS vector;\nSQL'
+
+          echo "🧾 Baseline resolve (idempotent)..."
+          docker run --rm --env-file .env.production --network host \
+            -e NODE_OPTIONS=--max-old-space-size=256 \
+            ghcr.io/wri-indonesia/nbs-llm:latest \
+            sh -lc 'npx prisma migrate resolve --applied 000_init || echo "baseline already applied"'
+
+          echo "🌱 Deploying database (migrations)..."
           docker run --rm --env-file .env.production --network host \
             -e NODE_OPTIONS=--max-old-space-size=256 \
             ghcr.io/wri-indonesia/nbs-llm:latest \

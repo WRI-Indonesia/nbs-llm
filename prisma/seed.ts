@@ -111,6 +111,19 @@ async function main() {
     }
   })
 
+  console.log('⚙️  Creating default config for admin user...')
+  await prisma.config.upsert({
+    where: { userId: adminUser.id },
+    update: {},
+    create: {
+      userId: adminUser.id,
+      chunkSize: 1000,
+      overlap: 200,
+      topK: 10,
+      minCos: 0.2,
+    } as any,
+  })
+
   console.log('📊 Creating default flow project...')
   const flowProject = await prisma.flowProject.create({
     data: {

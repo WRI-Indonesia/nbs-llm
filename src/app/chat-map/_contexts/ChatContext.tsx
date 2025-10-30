@@ -122,6 +122,17 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     }
   )
 
+  // Load user config for search parameters
+  const { data: configData } = useSWR<{ chunkSize: number, overlap: number, topK: number, minCos: number }>(
+    '/api/config',
+    async (url: string) => {
+      const res = await fetch(url, { credentials: 'include' })
+      if (!res.ok) throw new Error('Failed to load config')
+      return res.json()
+    },
+    { revalidateOnFocus: false, revalidateOnReconnect: false }
+  )
+
   const chatHistory = useMemo(() => {
     return chatHistoryData?.chatHistory || []
   }, [chatHistoryData?.chatHistory])
@@ -195,8 +206,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     try {
       const searchRequest: SearchRequest = {
         query,
-        min_cosine: 0.2,
-        top_k: 10,
+        min_cosine: Number(configData?.minCos ?? 0.2),
+        top_k: Number(configData?.topK ?? 10),
         projectId,
         location,
         timestamp: new Date()

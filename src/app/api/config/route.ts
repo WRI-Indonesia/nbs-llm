@@ -19,6 +19,8 @@ export async function GET() {
     return NextResponse.json({
       chunkSize: cfg?.chunkSize ?? 1000,
       overlap: cfg?.overlap ?? 200,
+      topK: cfg?.topK ?? 10,
+      minCos: cfg?.minCos ?? 0.2,
     })
   } catch (error) {
     console.error('Error fetching config:', error)
@@ -41,23 +43,33 @@ export async function PUT(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const rawChunkSize = Number(body.chunkSize)
     const rawOverlap = Number(body.overlap)
+    const rawTopK = Number(body.topK)
+    const rawMinCos = Number(body.minCos)
 
     if (!Number.isFinite(rawChunkSize) || !Number.isFinite(rawOverlap)) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
+    if (!Number.isFinite(rawTopK) || !Number.isFinite(rawMinCos)) {
+      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
+    }
+
     const chunkSize = Math.max(200, Math.min(8000, Math.floor(rawChunkSize)))
     const overlap = Math.max(0, Math.min(chunkSize - 1, Math.floor(rawOverlap)))
+    const topK = Math.max(1, Math.min(20, Math.floor(rawTopK)))
+    const minCos = Math.max(0, Math.min(1, Number(rawMinCos)))
 
     const updated = await prisma.config.upsert({
       where: { userId },
-      update: { chunkSize, overlap },
-      create: { userId, chunkSize, overlap },
+      update: { chunkSize, overlap, topK, minCos },
+      create: { userId, chunkSize, overlap, topK, minCos },
     })
 
     return NextResponse.json({
       chunkSize: updated.chunkSize,
       overlap: updated.overlap,
+      topK: updated.topK,
+      minCos: updated.minCos,
     })
   } catch (error) {
     console.error('Error updating config:', error)

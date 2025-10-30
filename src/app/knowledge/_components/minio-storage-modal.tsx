@@ -294,13 +294,13 @@ function FilesTab({
 // --------------------
 // Config Tab (separated)
 // --------------------
-function ConfigTab({ chunkSize, overlap, setChunkSize, setOverlap }: any) {
+function ConfigTab({ chunkSize, overlap, topK, minCos, setChunkSize, setOverlap, setTopK, setMinCos }: any) {
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      const res = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chunkSize, overlap }) })
+      const res = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chunkSize, overlap, topK, minCos }) })
       if (!res.ok) throw new Error('Failed to save')
       await res.json()
       toast.success('Configuration saved')
@@ -316,7 +316,7 @@ function ConfigTab({ chunkSize, overlap, setChunkSize, setOverlap }: any) {
 
   return (
     <div className="border rounded-lg p-6 bg-slate-50/50">
-      <h3 className="text-lg font-semibold mb-4">Chunking Configuration</h3>
+      <h3 className="text-lg font-semibold mb-4">Configuration</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="flex flex-col gap-3">
           <Label htmlFor="chunkSize">Chunk size (characters)</Label>
@@ -329,6 +329,18 @@ function ConfigTab({ chunkSize, overlap, setChunkSize, setOverlap }: any) {
           <input id="overlap" type="range" min={0} max={Math.max(0, Math.min(chunkSize - 1, 4000))} step={50} value={overlap} onChange={(e) => setOverlap(parseInt(e.target.value))} />
           <div className="text-sm text-muted-foreground">Current: <span className="font-medium">{overlap} characters</span></div>
           <p className="text-xs text-muted-foreground">The number of characters to overlap between consecutive chunks. Helps maintain context across chunk boundaries.</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="topK">Top K results</Label>
+          <input id="topK" type="range" min={1} max={20} step={1} value={topK} onChange={(e) => setTopK(parseInt(e.target.value))} />
+          <div className="text-sm text-muted-foreground">Current: <span className="font-medium">{topK}</span></div>
+          <p className="text-xs text-muted-foreground">Maximum number of documents to retrieve per source.</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="minCos">Min cosine similarity</Label>
+          <input id="minCos" type="range" min={0} max={1} step={0.01} value={minCos} onChange={(e) => setMinCos(parseFloat(e.target.value))} />
+          <div className="text-sm text-muted-foreground">Current: <span className="font-medium">{minCos.toFixed(2)}</span></div>
+          <p className="text-xs text-muted-foreground">Minimum similarity threshold for retrieved documents.</p>
         </div>
       </div>
       <div className="mt-6 flex justify-end">
@@ -439,8 +451,12 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
   const { data: configData } = useSWR('/api/config', fetcher)
   const chunkSize = configData?.chunkSize ?? 1000
   const overlap = configData?.overlap ?? 200
+  const topK = configData?.topK ?? 10
+  const minCos = configData?.minCos ?? 0.2
   const [localChunkSize, setLocalChunkSize] = useState(chunkSize)
   const [localOverlap, setLocalOverlap] = useState(overlap)
+  const [localTopK, setLocalTopK] = useState(topK)
+  const [localMinCos, setLocalMinCos] = useState(minCos)
 
   // Job status with polling while there's an active job
   const { data: jobData } = useSWR('/api/storage/index/status', fetcher, {
@@ -461,6 +477,8 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
     if (configData) {
       setLocalChunkSize(configData.chunkSize ?? localChunkSize)
       setLocalOverlap(configData.overlap ?? localOverlap)
+      setLocalTopK(configData.topK ?? localTopK)
+      setLocalMinCos(configData.minCos ?? localMinCos)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configData])
@@ -488,7 +506,7 @@ export default function MinioStorageModal({ isOpen, onClose }: MinioStorageModal
               </TabsContent>
 
               <TabsContent value="config" className="flex flex-col flex-1 overflow-hidden mt-4">
-                <ConfigTab chunkSize={localChunkSize} overlap={localOverlap} setChunkSize={setLocalChunkSize} setOverlap={setLocalOverlap} />
+                <ConfigTab chunkSize={localChunkSize} overlap={localOverlap} topK={localTopK} minCos={localMinCos} setChunkSize={setLocalChunkSize} setOverlap={setLocalOverlap} setTopK={setLocalTopK} setMinCos={setLocalMinCos} />
               </TabsContent>
 
               <TabsContent value="logs" className="flex flex-col flex-1 overflow-hidden mt-4">

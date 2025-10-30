@@ -4,14 +4,16 @@ import { ChatSidebar } from './_components/chat-sidebar'
 import { MapComponent } from './_components/map-component'
 import { ChatProvider } from './_contexts/ChatContext'
 import { useChat } from './_hooks/useChat'
+import { useState } from 'react'
 
 function ChatMapContent() {
   const { map } = useChat()
+  const [isSidebarOpen] = useState(true)
 
   return (
     <div className="flex h-screen pt-13">
       {/* Chat Sidebar */}
-      <div className="w-[400px] bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-[520px] bg-white border-r border-gray-200 flex flex-col">
         <ChatSidebar />
       </div>
 

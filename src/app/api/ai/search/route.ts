@@ -9,6 +9,7 @@ import { saveChatHistoryToDB } from './_utils/chat-history-utils'
 import { generateQueryEmbedding } from './_utils/generate-embedding-agent'
 import { generateSQLQuery } from './_utils/generate-sql-agent'
 import { executeSQLQuery } from './_utils/sql-utils'
+import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
 
 export async function POST(request: NextRequest) {
@@ -167,7 +168,10 @@ export async function POST(request: NextRequest) {
 
     // only generate SQL Query if relevantNodeDocs is not empty
     if (relevantNodeDocs.length !== 0) {
-      const relevantNodeDocsText = relevantNodeDocs.map((r) => r.document_text)
+      // Rerank: combine schema node docs first, prioritize top-N
+      const candidateDocs = relevantNodeDocs.map((d) => ({ id: String(d.id), text: d.document_text }))
+      const reranked = await rerankDocuments(newQuery, candidateDocs, { topN: Math.min(20, candidateDocs.length) })
+      const relevantNodeDocsText = reranked.map((r) => r.text)
       /**
       * GENERATE SQL AGENT
       * Generate SQL query using the relevant documents

@@ -214,7 +214,7 @@ jobs:
           docker run --rm --env-file .env.production --network host \
             -e NODE_OPTIONS=--max-old-space-size=256 \
             ghcr.io/wri-indonesia/nbs-llm:latest \
-            npx prisma db deploy
+            npx prisma migrate deploy
 
           echo "🧹 Cleaning up unused images..."
           docker image prune -f

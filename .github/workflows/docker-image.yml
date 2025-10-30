@@ -206,8 +206,6 @@ jobs:
           CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
           EOF
 
-<<<<<<< HEAD
-=======
           echo "🧩 Writing docker-compose.yml..."
           cat > docker-compose.yml <<'EOF'
 
@@ -266,7 +264,6 @@ jobs:
               external: true
           EOF
 
->>>>>>> main
           echo "📥 Pulling latest images (all services)..."
           docker compose pull || {
             echo "❌ Failed to pull Docker image"
@@ -279,15 +276,6 @@ jobs:
             exit 1
           }
 
-<<<<<<< HEAD
-          echo "🔌 Ensuring pgvector extension..."
-          docker run --rm --env-file .env.production --network host \
-            -e NODE_OPTIONS=--max-old-space-size=256 \
-            ghcr.io/wri-indonesia/nbs-llm:latest \
-            sh -lc 'npx prisma db execute --stdin <<"SQL"\nCREATE EXTENSION IF NOT EXISTS vector;\nSQL'
-
-=======
->>>>>>> main
           echo "🧾 Baseline resolve (idempotent)..."
           docker run --rm --env-file .env.production --network host \
             -e NODE_OPTIONS=--max-old-space-size=256 \

@@ -13,7 +13,12 @@ RUN npx prisma generate
 
 # Copy source and build
 COPY . .
-RUN npm run build
+
+# 🔐 Securely inject secret only during build
+RUN --mount=type=secret,id=openai_api_key \
+  export OPENAI_API_KEY=$(cat /run/secrets/openai_api_key) && \
+  echo "🔧 Building Next.js with secure secret..." && \
+  npm run build
 
 # ---- Runner ----
 FROM node:20-alpine AS runner

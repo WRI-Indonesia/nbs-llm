@@ -14,7 +14,17 @@ services:
       timeout: 3s
       retries: 5
 
-  worker:
+  nbs-llm:
+    image: ghcr.io/wri-indonesia/nbs-llm:latest
+    container_name: nbs-llm
+    env_file:
+      - .env.production
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nbs-llm-worker:
     build:
       context: .
       dockerfile: Dockerfile.worker

@@ -211,3 +211,17 @@ enum UserRole {
   ADMIN
   USER
 }
+
+// Reflects durable semantic memory table
+model MemSemantic {
+  id          Int      @id @default(autoincrement())
+  user_id     String
+  project_id  String
+  content     String
+  embedding   Unsupported("vector")
+  tags        String[] @default([])
+  created_at  DateTime @default(now())
+
+  @@map("mem_semantic")
+  @@index([project_id], name: "mem_semantic_project_idx")
+}

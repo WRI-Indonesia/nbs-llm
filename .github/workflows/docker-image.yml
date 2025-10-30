@@ -148,11 +148,13 @@ jobs:
           set -e  # Exit on any error
           echo "Updating Data Lab Indonesia LLM container on llm.wri-indonesia.or.id..."
           cd /home/${{ secrets.VM_USER }}/docker/nbs-llm
+
           echo "🔐 Authenticating with GitHub Container Registry..."
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
             echo "❌ Failed to authenticate with GitHub Container Registry"
             exit 1
           }
+
           echo "🧩 Writing .env.production..."
           cat > .env.production <<EOF
           NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
@@ -195,16 +197,19 @@ jobs:
           SEMANTIC_TOPK=${{ secrets.SEMANTIC_TOPK }}
           CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
           EOF
+
           echo "📥 Pulling latest image..."
           docker compose pull nbs-llm || {
             echo "❌ Failed to pull Docker image"
             exit 1
           }
+
           echo "🚀 Starting container..."
           docker compose up -d || {
             echo "❌ Failed to start container"
             exit 1
           }
+
           echo "🧹 Cleaning up unused images..."
           docker image prune -f
           echo "✅ Deployment completed successfully!"

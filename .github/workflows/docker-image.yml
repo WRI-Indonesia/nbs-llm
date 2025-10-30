@@ -213,6 +213,8 @@ jobs:
             redis:
               image: redis:7-alpine
               container_name: nbs-llm-redis
+              networks:
+                - proxy
               ports:
                 - "6379:6379"
               volumes:
@@ -242,6 +244,8 @@ jobs:
             nbs-llm-worker:
               image: ghcr.io/wri-indonesia/nbs-llm-worker:latest
               container_name: nbs-llm-worker
+              networks:
+                - proxy
               env_file:
                 - .env.production
               environment:

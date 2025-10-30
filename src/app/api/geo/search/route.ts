@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geoPrisma } from '@/lib/geo-prisma';
 import JSZip from 'jszip';
 import * as shapefile from 'shapefile';
 
+export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs';
 
 type HitRow = { province: string | null; district: string | null };
@@ -128,7 +128,9 @@ export async function POST(req: NextRequest) {
     // 2) Build SQL (single JSON param)
     const { sql, params } = buildSqlForGeometryCollection(geoms);
 
-    // 3) Query with geoPrisma.$queryRawUnsafe
+    // 3) Query with geo prisma (lazy)
+    const mod = await import('@/lib/geo-prisma')
+    const geoPrisma = typeof (mod as any).getGeoPrisma === 'function' ? (mod as any).getGeoPrisma() : (mod as any).geoPrisma
     const rows = await geoPrisma.$queryRawUnsafe<HitRow[]>(sql, ...params);
 
     const data = rows.map((r) => ({

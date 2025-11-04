@@ -89,6 +89,11 @@ jobs:
         SEMANTIC_TOPK: ${{ secrets.SEMANTIC_TOPK }}
         CACHE_TTL_SEMRETR: ${{ secrets.CACHE_TTL_SEMRETR }}
 
+        MEM_SEMANTIC_WRITE_ENABLED: ${{ secrets.MEM_SEMANTIC_WRITE_ENABLED }}
+        MEM_EPISODIC_ENABLED: ${{ secrets.MEM_EPISODIC_ENABLED }}
+        MEM_PROCEDURAL_ENABLED: ${{ secrets.MEM_PROCEDURAL_ENABLED }}
+        EPISODIC_TOPK: ${{ secrets.EPISODIC_TOPK }}
+
       run: |
         IMAGE_ID=ghcr.io/wri-indonesia/nbs-llm
         VERSION=${GITHUB_SHA::7}
@@ -132,6 +137,10 @@ jobs:
           --secret id=cache_enabled,env=CACHE_ENABLED \
           --secret id=semantic_topk,env=SEMANTIC_TOPK \
           --secret id=cache_ttl_semretr,env=CACHE_TTL_SEMRETR \
+          --secret id=mem_semantic_write_enabled,env=MEM_SEMANTIC_WRITE_ENABLED \
+          --secret id=mem_episodic_enabled,env=MEM_EPISODIC_ENABLED \
+          --secret id=mem_procedural_enabled,env=MEM_PROCEDURAL_ENABLED \
+          --secret id=episodic_topk,env=EPISODIC_TOPK \
           -t $IMAGE_ID:latest -t $IMAGE_ID:$VERSION .
         echo "🚀 Pushing web image to GHCR..."
         docker push $IMAGE_ID:latest
@@ -204,6 +213,10 @@ jobs:
           CACHE_ENABLED=${{ secrets.CACHE_ENABLED }}
           SEMANTIC_TOPK=${{ secrets.SEMANTIC_TOPK }}
           CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
+          MEM_SEMANTIC_WRITE_ENABLED=${{ secrets.MEM_SEMANTIC_WRITE_ENABLED }}
+          MEM_EPISODIC_ENABLED=${{ secrets.MEM_EPISODIC_ENABLED }}
+          MEM_PROCEDURAL_ENABLED=${{ secrets.MEM_PROCEDURAL_ENABLED }}
+          EPISODIC_TOPK=${{ secrets.EPISODIC_TOPK }}
           EOF
 
           echo "🧩 Writing docker-compose.yml..."

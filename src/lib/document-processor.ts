@@ -1,5 +1,5 @@
-import { PDFReader } from '@llamaindex/readers/pdf'
-import { OpenAIEmbedding } from '@llamaindex/openai'
+import pdfParse from 'pdf-parse'
+import OpenAI from 'openai'
 import { prisma } from './prisma'
 import { getMinioClient, initBucket } from './minio'
 import { createIndexingLogger } from './indexing-logger'
@@ -62,43 +62,43 @@ async function processPDFFile(
   }
   const buffer = Buffer.concat(chunks)
 
-  // Use LlamaIndex PDFReader to parse the PDF
-  const pdfReader = new PDFReader()
-  const docs = await pdfReader.loadDataAsContent(buffer)
+  // Parse PDF using pdf-parse (pure JavaScript, no Python dependencies)
+  const pdfData = await pdfParse(buffer)
+  const text = pdfData.text.trim()
+
+  if (!text || text.length === 0) {
+    return 0
+  }
+
+  // Extract just the filename from the full path
+  const fileNameOnly = fileName.split('/').pop() || fileName
+
+  // Initialize OpenAI client for embeddings
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  const embeddingModel = process.env.OPENAI_EMBEDDING ?? "text-embedding-3-large"
 
   let documentCount = 0
-  const embeddingModel = new OpenAIEmbedding({
-    model: process.env.OPENAI_EMBEDDING ?? "text-embedding-3-large",
-  })
+  const textChunks = chunkText(text, chunking)
+  
+  for (const chunk of textChunks) {
+    // Generate embedding using OpenAI SDK directly
+    const embeddingResponse = await openai.embeddings.create({
+      model: embeddingModel,
+      input: chunk,
+    })
+    const embedding = embeddingResponse.data[0].embedding
+    const embeddingJson = JSON.stringify(embedding)
 
-  // Process each document from the PDF
-  for (const doc of docs) {
-    const text = doc.getText().trim()
-    if (!text || text.length === 0) {
-      continue
-    }
-
-    // Extract just the filename from the full path
-    const fileNameOnly = fileName.split('/').pop() || fileName
-
-    const textChunks = chunkText(text, chunking)
-    for (const chunk of textChunks) {
-      // Generate embedding using OpenAI
-      const embedding = await embeddingModel.getTextEmbedding(chunk)
-      const embeddingJson = JSON.stringify(embedding)
-
-      await prisma.$queryRawUnsafe(`
+    await prisma.$queryRawUnsafe(`
       INSERT INTO "minio_docs" ("projectId", "fileName", "text", "embedding")
       VALUES ($1, $2, $3, ($4)::vector(3072))
       `,
-        projectId,
-        fileNameOnly,
-        chunk,
-        embeddingJson
-      )
-      documentCount++
-
-    }
+      projectId,
+      fileNameOnly,
+      chunk,
+      embeddingJson
+    )
+    documentCount++
   }
 
   return documentCount
@@ -244,22 +244,29 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
     // Extract fileNames from MinIO (without path)
     const minioFileNames = new Set(objectsList.map(obj => obj.fileName))
 
-    // Find fileNames that are in database but not in MinIO anymore - these should be deleted
-    const fileNamesToDelete = Array.from(indexedFileNames).filter(
-      fileName => !minioFileNames.has(fileName)
-    )
-
-    // Delete minio_docs for fileNames that no longer exist in MinIO
+    // Only delete files if we successfully found files in MinIO
+    // If MinIO listing is empty, it might be a configuration issue, so don't delete everything
     let deletedCount = 0
-    if (fileNamesToDelete.length > 0) {
-      const deleteResult = await prisma.minioDocs.deleteMany({
-        where: {
-          projectId,
-          fileName: { in: fileNamesToDelete }
-        }
-      })
-      deletedCount = deleteResult.count
-      await log.info(`Deleted ${deletedCount} MinioDocs for ${fileNamesToDelete.length} removed files: ${fileNamesToDelete.join(', ')}`)
+    let fileNamesToDelete: string[] = []
+    if (objectsList.length > 0) {
+      // Find fileNames that are in database but not in MinIO anymore - these should be deleted
+      fileNamesToDelete = Array.from(indexedFileNames).filter(
+        fileName => !minioFileNames.has(fileName)
+      )
+
+      // Delete minio_docs for fileNames that no longer exist in MinIO
+      if (fileNamesToDelete.length > 0) {
+        const deleteResult = await prisma.minioDocs.deleteMany({
+          where: {
+            projectId,
+            fileName: { in: fileNamesToDelete }
+          }
+        })
+        deletedCount = deleteResult.count
+        await log.info(`Deleted ${deletedCount} MinioDocs for ${fileNamesToDelete.length} removed files: ${fileNamesToDelete.join(', ')}`)
+      }
+    } else {
+      await log.warn(`No files found in MinIO - skipping deletion to prevent accidental data loss. This might indicate a configuration issue.`)
     }
 
     // Filter objectsList to only include files that haven't been indexed yet
@@ -326,8 +333,9 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       }
 
       // Skip already processed files (for resume functionality)
-      if (processedFileNames.includes(fileObj.name)) {
-        await log.log(`[${fileNumber}/${filesToIndex.length}] Skipping already processed: ${fileObj.name}`)
+      // Compare using fileName (without path) for consistency with DB storage
+      if (processedFileNames.includes(fileObj.fileName)) {
+        await log.log(`[${fileNumber}/${filesToIndex.length}] Skipping already processed: ${fileObj.fileName}`)
         continue
       }
 
@@ -336,12 +344,13 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
         await log.info(`[${fileNumber}/${filesToIndex.length}] Processing: ${fileObj.name} (fileName: ${fileObj.fileName})`)
         await log.info(`File size: ${(fileObj.size / 1024 / 1024).toFixed(2)} MB`)
 
-        // Process PDF using LlamaIndex
+        // Process PDF using pdf-parse
         const docCount = await processPDFFile(fileObj.name, projectId, chunking)
 
         successfulFiles++
         processedFiles++
-        processedFileNames.push(fileObj.name)
+        // Store fileName (without path) for consistency with DB storage
+        processedFileNames.push(fileObj.fileName)
         totalDocuments += docCount
 
         const duration = ((Date.now() - startTime) / 1000).toFixed(2)

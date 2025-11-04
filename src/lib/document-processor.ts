@@ -198,18 +198,11 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       overlap: Math.max(0, Math.min(4000, userConfig?.overlap ?? 200)),
     }
 
-    // Delete existing MinioDocs for this project
-    await prisma.minioDocs.deleteMany({
-      where: { projectId },
-    })
-
-    await log.info(`Deleted existing MinioDocs for project ${projectId}`)
-
     // Initialize MinIO and get client
     await initBucket(BUCKET_NAME)
     const minioClient = getMinioClient()
 
-    // List all PDF files in MinIO
+    // List all PDF files in MinIO and extract fileName without path
     const objectsList: any[] = []
     const objectsStream = minioClient.listObjects(BUCKET_NAME, DEFAULT_PREFIX, true)
 
@@ -222,22 +215,66 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
         continue
       }
 
+      // Extract fileName without path (just the filename)
+      const fileNameOnly = obj.name.split('/').pop() || obj.name
+
       objectsList.push({
-        name: obj.name,
+        name: obj.name, // Full path for MinIO operations
+        fileName: fileNameOnly, // Just filename for comparison
         size: obj.size,
       })
     }
 
     await log.info(`Found ${objectsList.length} PDF files in MinIO`)
+
+    // Get all distinct fileNames that are already indexed in minio_docs for this project
+    const indexedFileNamesResult = await prisma.minioDocs.findMany({
+      where: { projectId },
+      select: { fileName: true },
+      distinct: ['fileName']
+    })
+    const indexedFileNames = new Set(
+      indexedFileNamesResult
+        .map(doc => doc.fileName)
+        .filter((name): name is string => name !== null && name !== '')
+    )
+
+    await log.info(`Found ${indexedFileNames.size} already indexed fileNames in database`)
+
+    // Extract fileNames from MinIO (without path)
+    const minioFileNames = new Set(objectsList.map(obj => obj.fileName))
+
+    // Find fileNames that are in database but not in MinIO anymore - these should be deleted
+    const fileNamesToDelete = Array.from(indexedFileNames).filter(
+      fileName => !minioFileNames.has(fileName)
+    )
+
+    // Delete minio_docs for fileNames that no longer exist in MinIO
+    let deletedCount = 0
+    if (fileNamesToDelete.length > 0) {
+      const deleteResult = await prisma.minioDocs.deleteMany({
+        where: {
+          projectId,
+          fileName: { in: fileNamesToDelete }
+        }
+      })
+      deletedCount = deleteResult.count
+      await log.info(`Deleted ${deletedCount} MinioDocs for ${fileNamesToDelete.length} removed files: ${fileNamesToDelete.join(', ')}`)
+    }
+
+    // Filter objectsList to only include files that haven't been indexed yet
+    const filesToIndex = objectsList.filter(obj => !indexedFileNames.has(obj.fileName))
+    
+    await log.info(`Files to index: ${filesToIndex.length} (${objectsList.length - filesToIndex.length} already indexed, ${fileNamesToDelete.length} deleted)`)
     await log.info(`STARTING INDEXING PROCESS`)
 
-    // Update total files count
+    // Update total files count (only count files that need indexing)
     await prisma.indexingJob.update({
       where: { id: jobId },
-      data: { totalFiles: objectsList.length },
+      data: { totalFiles: filesToIndex.length },
     })
 
-    // Get processed file names
+    // Get processed file names (for resume functionality)
     const jobData = await prisma.indexingJob.findUnique({
       where: { id: jobId },
       select: {
@@ -261,9 +298,9 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
       await log.info(`Documents indexed so far: ${totalDocuments}`)
     }
 
-    // Process each file
-    for (let i = 0; i < objectsList.length; i++) {
-      const fileObj = objectsList[i]
+    // Process each file that needs indexing
+    for (let i = 0; i < filesToIndex.length; i++) {
+      const fileObj = filesToIndex[i]
       const fileNumber = i + 1
 
       // Check if job has been cancelled or paused
@@ -274,29 +311,29 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
 
       if (jobCheck?.status === 'cancelled') {
         await log.warn(`JOB CANCELLED by user`)
-        await log.warn(`Processed: ${processedFiles}/${objectsList.length} files`)
+        await log.warn(`Processed: ${processedFiles}/${filesToIndex.length} files`)
         await log.warn(`Documents indexed: ${totalDocuments}`)
         await log.warn(`Stopped at: ${new Date().toISOString()}`)
-        return { success: false, cancelled: true, totalFiles: objectsList.length, totalDocuments }
+        return { success: false, cancelled: true, totalFiles: filesToIndex.length, totalDocuments }
       }
 
       if (jobCheck?.status === 'paused') {
         await log.warn(`JOB PAUSED by user`)
-        await log.warn(`Processed: ${processedFiles}/${objectsList.length} files`)
+        await log.warn(`Processed: ${processedFiles}/${filesToIndex.length} files`)
         await log.warn(`Documents indexed: ${totalDocuments}`)
         await log.warn(`Paused at: ${new Date().toISOString()}`)
-        return { success: false, paused: true, totalFiles: objectsList.length, totalDocuments }
+        return { success: false, paused: true, totalFiles: filesToIndex.length, totalDocuments }
       }
 
       // Skip already processed files (for resume functionality)
       if (processedFileNames.includes(fileObj.name)) {
-        await log.log(`[${fileNumber}/${objectsList.length}] Skipping already processed: ${fileObj.name}`)
+        await log.log(`[${fileNumber}/${filesToIndex.length}] Skipping already processed: ${fileObj.name}`)
         continue
       }
 
       try {
         const startTime = Date.now()
-        await log.info(`[${fileNumber}/${objectsList.length}] Processing: ${fileObj.name}`)
+        await log.info(`[${fileNumber}/${filesToIndex.length}] Processing: ${fileObj.name} (fileName: ${fileObj.fileName})`)
         await log.info(`File size: ${(fileObj.size / 1024 / 1024).toFixed(2)} MB`)
 
         // Process PDF using LlamaIndex
@@ -334,7 +371,7 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
         await log.info(`Success! Processed ${docCount} document chunks in ${duration}s`)
 
       } catch (error) {
-        await log.error(`[${fileNumber}/${objectsList.length}] Failed: ${fileObj.name}`)
+        await log.error(`[${fileNumber}/${filesToIndex.length}] Failed: ${fileObj.name}`)
         await log.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
         failedFiles++
         processedFiles++
@@ -376,14 +413,17 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
 
     await log.info(`INDEXING COMPLETE!`)
     await log.info(`Job ID: ${jobId}`)
-    await log.info(`Total files: ${objectsList.length}`)
+    await log.info(`Total files in MinIO: ${objectsList.length}`)
+    await log.info(`Files to index: ${filesToIndex.length}`)
+    await log.info(`Files already indexed (skipped): ${objectsList.length - filesToIndex.length}`)
+    await log.info(`Files deleted (removed from MinIO): ${fileNamesToDelete.length}`)
     await log.info(`Processed: ${processedFiles}`)
     await log.info(`Successful: ${successfulFiles}`)
     await log.info(`Failed: ${failedFiles}`)
     await log.info(`Total documents indexed: ${totalDocuments}`)
     await log.info(`Completed at: ${new Date().toISOString()}`)
 
-    return { success: true, totalFiles: objectsList.length, totalDocuments }
+    return { success: true, totalFiles: filesToIndex.length, totalDocuments }
 
   } catch (error) {
     await log.error(`FATAL ERROR processing indexing job ${jobId}`)

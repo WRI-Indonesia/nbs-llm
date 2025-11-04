@@ -1,4 +1,11 @@
-export async function generateAnswer(userQuery: string, data: any[], context: any[]): Promise<string> {
+export type TokenUsage = {
+    prompt: number
+    completion: number
+    total: number
+    source: 'measured' | 'estimated'
+}
+
+export async function generateAnswer(userQuery: string, data: any[], context: any[]): Promise<{ text: string, usage: TokenUsage }> {
     // Define the new API endpoint and model
     const SEA_LLM_ENDPOINT = (process.env.SUMMARIZATION_MODEL_ENDPOINT || '').trim()
     const SEA_LLM_MODEL = (process.env.SUMMARIZATION_MODEL || '').trim()
@@ -35,7 +42,7 @@ export async function generateAnswer(userQuery: string, data: any[], context: an
             : "";
 
         if (data.length === 0 && context.length === 0) {
-            return "No data found for this query";
+            return { text: "No data found for this query", usage: { prompt: 0, completion: 0, total: 0, source: 'estimated' } };
         }
 
         const systemPrompt = "You are an expert researcher on Nature-Based Solutions. Keep your response SHORT, conversational, and friendly. You MUST use the provided 'Context' and 'Current Query Data' to formulate your answer.";
@@ -82,14 +89,25 @@ Guidelines:
 
         const result = await response.json();
 
-        // 4. Extract and return the answer
-        return (
+        const answer = (
             result.choices?.[0]?.message?.content?.trim() ||
             "Sorry, I got data back, but it was empty."
-        );
+        )
+
+        // approximate token usage
+        const promptEst = Math.ceil((systemPrompt.length + userMessage.length) / 4)
+        const completionEst = Math.ceil(answer.length / 4)
+        const usage: TokenUsage = {
+            prompt: promptEst,
+            completion: completionEst,
+            total: promptEst + completionEst,
+            source: 'estimated'
+        }
+        // 4. Extract and return the answer
+        return { text: answer, usage }
 
     } catch (error) {
         console.error("Error generating answer with SeaLLM:", error);
-        return "Sorry, couldn't analyze the data right now.";
+        return { text: "Sorry, couldn't analyze the data right now.", usage: { prompt: 0, completion: 0, total: 0, source: 'estimated' } }
     }
 }

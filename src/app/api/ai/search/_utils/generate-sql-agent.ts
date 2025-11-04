@@ -1,9 +1,21 @@
 import OpenAI from 'openai'
 
+export type TokenUsage = {
+    prompt: number
+    completion: number
+    total: number
+    source: 'measured' | 'estimated'
+}
+
+export type SQLGenResult = {
+    sql: string
+    usage?: TokenUsage
+}
+
 /**
  * Generates SQL query using OpenAI based on relevant documents
  */
-export async function generateSQLQuery(query: string, relevantDocs: string[]): Promise<string> {
+export async function generateSQLQuery(query: string, relevantDocs: string[]): Promise<SQLGenResult> {
     try {
         const text = relevantDocs.map(doc => `- ${doc}`).join('\n');
 
@@ -73,7 +85,11 @@ SQL Query:`
             max_tokens: 1000
         })
 
-        return completion.choices[0]?.message?.content?.trim() || ''
+        const sql = completion.choices[0]?.message?.content?.trim() || ''
+        const usage: TokenUsage = completion.usage ? { prompt: completion.usage.prompt_tokens ?? 0, completion: completion.usage.completion_tokens ?? 0, total: (completion.usage.total_tokens ?? 0) || ((completion.usage.prompt_tokens ?? 0) + (completion.usage.completion_tokens ?? 0)), source: 'measured' } : 
+                                { prompt: Math.ceil(prompt.length / 4), completion: Math.ceil(sql.length / 4), total: Math.ceil(prompt.length / 4) + Math.ceil(sql.length / 4), source: 'estimated' }
+
+        return { sql, usage }
     } catch (error) {
         console.error('Error generating SQL query:', error)
         throw new Error('Failed to generate SQL query')

@@ -14,6 +14,7 @@ import { executeSQLQuery } from './_utils/sql-utils'
 import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
 import { cacheGetOrSet, sha256 } from './_utils/cache'
+import { saveSemanticMemory, retrieveEpisodicMemory, logProcedure } from './_utils/memory'
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +31,6 @@ export async function POST(request: NextRequest) {
       min_cosine: min_cosine_raw,
       top_k: top_k_raw,
       projectId,
-      location = { district: [], province: [] },
       timestamp = new Date(),
       use_hybrid: use_hybrid_raw,
       hybrid_alpha: hybrid_alpha_raw
@@ -52,6 +52,12 @@ export async function POST(request: NextRequest) {
     const hybrid_alpha = typeof hybrid_alpha_raw === 'number'
       ? hybrid_alpha_raw
       : Number(hybrid_alpha_raw ?? process.env.HYBRID_ALPHA ?? 0.7)
+
+    // Memory feature flags
+    const MEM_SEMANTIC_WRITE_ENABLED = (process.env.MEM_SEMANTIC_WRITE_ENABLED ?? 'true').toLowerCase() !== 'false'
+    const MEM_EPISODIC_ENABLED = (process.env.MEM_EPISODIC_ENABLED ?? 'true').toLowerCase() !== 'false'
+    const MEM_PROCEDURAL_ENABLED = (process.env.MEM_PROCEDURAL_ENABLED ?? 'true').toLowerCase() !== 'false'
+    const EPISODIC_TOPK = Number(process.env.EPISODIC_TOPK ?? 6)
 
     // Now validations work with numbers/booleans
     if (!query) {
@@ -125,6 +131,11 @@ export async function POST(request: NextRequest) {
       return await generateQueryEmbedding(newQuery)
     })
     const embeddingStr = JSON.stringify(queryEmbedding);
+
+    // Episodic memory: recent chat snippets
+    const episodicSnippets: string[] = MEM_EPISODIC_ENABLED
+      ? await retrieveEpisodicMemory({ userId: user.id, projectId, topK: EPISODIC_TOPK })
+      : []
 
     // Semantic cache: retrieve top semantic facts from mem_semantic and cache them short-term
     const TTL_SEMRETR = Number(process.env.CACHE_TTL_SEMRETR ?? 60 * 30)
@@ -231,19 +242,23 @@ export async function POST(request: NextRequest) {
         relevantNodeDocsText = candidateDocs.map(c => c.text)
       }
 
-      // Prepend semantic snippets (pgvector mem_semantic) to boost grounding
+      // Prepend episodic (chat history) and semantic snippets to boost grounding
       relevantNodeDocsText = [
+        ...episodicSnippets,
         ...semanticSnippets,
         ...relevantNodeDocsText
-      ].slice(0, Math.min(20, semanticSnippets.length + relevantNodeDocsText.length))
+      ].slice(0, Math.min(24, episodicSnippets.length + semanticSnippets.length + relevantNodeDocsText.length))
       /**
       * GENERATE SQL AGENT
       * Generate SQL query using the relevant documents
       */
       const sqlKey = `sqlgen:v1:${projectId}:${sha256(newQuery + '|' + relevantNodeDocsText.join('\n').slice(0, 4000))}`
-      sqlQuery = await cacheGetOrSet(sqlKey, 60 * 60 * 12, async () => (
+
+      const sqlGenRes = await cacheGetOrSet(sqlKey, 60 * 60 * 12, async () => (
         await generateSQLQuery(newQuery, relevantNodeDocsText)
       ))
+      sqlQuery = sqlGenRes.sql
+      const sqlUsage = sqlGenRes.usage
 
       // Execute it and store into data
       try {
@@ -255,7 +270,7 @@ export async function POST(request: NextRequest) {
       
         const errorMessage = executionError instanceof Error ? executionError.message : 'Unknown error'
 
-        const ragAnswer = await generateAnswer(`${newQuery} (Fallback to RAG)`, [], 
+        const ragRes = await generateAnswer(`${newQuery} (Fallback to RAG)`, [], 
           [
             `SQL execution failed: ${errorMessage}`,
             `Generated SQL Query: ${sqlQuery}`,
@@ -267,11 +282,11 @@ export async function POST(request: NextRequest) {
           role: 'assistant',
           projectId,
           userId: user.id,
-          content: ragAnswer,
+          content: ragRes.text,
           sqlQuery,
           ragNodeDocuments: relevantNodeDocs,
           ragMinioDocuments: relevantMinioDocs,
-          improvedPrompt: null,
+          improvedPrompt: JSON.stringify({ tokenUsage: { sql: sqlUsage ?? null, summarize: ragRes.usage, total: (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0) } }),
           data: [],
           timestamp: new Date()
         })
@@ -284,11 +299,30 @@ export async function POST(request: NextRequest) {
      * SUMMARIZATION AGENT
      * Combine improved user query, data from excecuted SQL, and context from RAG Minio
      */
-    const ctxDocs = relevantMinioDocs.map((r) => r.document_text)
-    const sumKey = `sum:v1:${process.env.SUMMARIZATION_MODEL || 'SeaLLM'}:${sha256(newQuery + '|' + JSON.stringify(data).slice(0, 4000) + '|' + sha256(ctxDocs.join('\n').slice(0, 4000)))}`
-    const answer = await cacheGetOrSet(sumKey, 60 * 20, async () => (
+    const ctxDocs = [
+      // Use MinIO RAG docs plus memory snippets as extra context
+      ...relevantMinioDocs.map((r) => r.document_text),
+      ...semanticSnippets,
+      ...episodicSnippets
+    ]
+    // bump cache namespace to avoid legacy string payloads
+    const sumKey = `sum:v2:${process.env.SUMMARIZATION_MODEL || 'SeaLLM'}:${sha256(newQuery + '|' + JSON.stringify(data).slice(0, 4000) + '|' + sha256(ctxDocs.join('\n').slice(0, 4000)))}`
+    const sumRes2 = await cacheGetOrSet(sumKey, 60 * 20, async () => (
       await generateAnswer(newQuery, data, ctxDocs)
     ))
+    type SumUsage = { prompt: number; completion: number; total: number; source: 'measured' | 'estimated' }
+    type SumObj = { text: string; usage: SumUsage }
+    const sumAny: any = sumRes2 as any
+    const sumObj: SumObj = (typeof sumAny === 'string')
+      ? { text: sumAny as string, usage: { prompt: 0, completion: Math.ceil((sumAny as string).length / 4), total: Math.ceil((sumAny as string).length / 4), source: 'estimated' } }
+      : (sumAny as SumObj)
+    const answer = sumObj.text
+
+    // Semantic memory write-back: store compact fact for future retrieval
+    if (MEM_SEMANTIC_WRITE_ENABLED) {
+      const toStore = `${newQuery} — ${answer.slice(0, 1500)}`
+      await saveSemanticMemory({ userId: user.id, projectId, content: toStore, tags: ['answer','auto'] })
+    }
 
     // assistant
     await saveChatHistoryToDB({
@@ -299,10 +333,32 @@ export async function POST(request: NextRequest) {
       sqlQuery,
       ragNodeDocuments: relevantNodeDocs,
       ragMinioDocuments: relevantMinioDocs,
-      improvedPrompt: null,
+      improvedPrompt: JSON.stringify({ tokenUsage: { sql: null, summarize: sumObj.usage, total: sumObj.usage.total } }),
       data,
       timestamp: new Date()
     })
+
+    // Procedural memory logging: record the flow and decisions
+    if (MEM_PROCEDURAL_ENABLED) {
+      await logProcedure({
+        userId: user.id,
+        projectId,
+        name: 'search_pipeline_v1',
+        details: {
+          use_hybrid,
+          hybrid_alpha,
+          min_cosine,
+          top_k,
+          rerankEnabled: (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false',
+          semanticSnippets: semanticSnippets.length,
+          episodicSnippets: episodicSnippets.length,
+          nodeDocs: (typeof relevantNodeDocs !== 'undefined') ? relevantNodeDocs.length : 0,
+          minioDocs: (typeof relevantMinioDocs !== 'undefined') ? relevantMinioDocs.length : 0,
+          hadSql: Boolean(sqlQuery),
+          dataRows: Array.isArray(data) ? data.length : 0
+        }
+      })
+    }
 
     return NextResponse.json({ status: 'success' })
 

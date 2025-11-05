@@ -84,7 +84,7 @@ export async function GET() {
 
     // Add to queue with the same jobId (so control endpoints can find it)
     const indexQueue = await getIndexQueue()
-    const queuedJob = await indexQueue.add(
+    await indexQueue.add(
       'process-indexing',
       {
         jobId: job.id,

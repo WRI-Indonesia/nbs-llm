@@ -4,11 +4,9 @@ import { ChatSidebar } from './_components/chat-sidebar'
 import { MapComponent } from './_components/map-component'
 import { ChatProvider } from './_contexts/ChatContext'
 import { useChat } from './_hooks/useChat'
-import { useState } from 'react'
 
 function ChatMapContent() {
   const { map } = useChat()
-  const [isSidebarOpen] = useState(true)
 
   return (
     <div className="flex h-screen pt-13">

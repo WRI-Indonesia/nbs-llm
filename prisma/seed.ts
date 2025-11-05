@@ -99,23 +99,34 @@ async function main() {
 
   console.log('🔗 Upserting sample flow node...')
   for (const node of SAMPLE_NODES) {
-    const sampleNode = await prisma.flowNode.upsert({
-      where: { id: node.id },
-      update: {
-        projectId: flowProject.id,
-        type: node.type as string,
-        position: node.position,
-        data: node.data as any,
-      },
-      create: {
-        id: node.id,
+    // Find existing node by composite unique constraint (projectId, nodeId)
+    const existingNode = await prisma.flowNode.findFirst({
+      where: {
         projectId: flowProject.id,
         nodeId: node.id,
-        data: node.data as any,
-        type: node.type as string,
-        position: node.position,
       },
     })
+
+    const sampleNode = existingNode
+      ? await prisma.flowNode.update({
+          where: { id: existingNode.id },
+          data: {
+            projectId: flowProject.id,
+            type: node.type as string,
+            position: node.position,
+            data: node.data as any,
+          },
+        })
+      : await prisma.flowNode.create({
+          data: {
+            id: node.id,
+            projectId: flowProject.id,
+            nodeId: node.id,
+            data: node.data as any,
+            type: node.type as string,
+            position: node.position,
+          },
+        })
     console.log(`Upserted sample node: ${sampleNode.nodeId}`)
   }
 }

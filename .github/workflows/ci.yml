@@ -1,0 +1,401 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "dev-deddy" ]
+  pull_request:
+    branches: [ "main", "dev-deddy" ]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://user:password@localhost:5432/test' }}
+
+      - name: Run tests
+        run: npm test -- --coverage --passWithNoTests
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, test]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://user:password@localhost:5432/test' }}
+
+      - name: Build Next.js
+        run: npm run build
+
+  docker-build:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev-deddy')
+    environment: production
+    timeout-minutes: 15
+
+    env:
+      DOCKER_BUILDKIT: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        env:
+          # NextAuth Configuration
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          # Google OAuth
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          # Database
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEO_DATABASE_URL: ${{ secrets.GEO_DATABASE_URL }}
+          # OpenAI
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REPROMPT_AGENT_MODEL: ${{ secrets.REPROMPT_AGENT_MODEL }}
+          EMBED_MODEL_NAME: ${{ secrets.EMBED_MODEL_NAME }}
+          SQL_GENERATOR_AGENT_MODEL: ${{ secrets.SQL_GENERATOR_AGENT_MODEL }}
+          SUMMARIZATION_MODEL: ${{ secrets.SUMMARIZATION_MODEL }}
+          SUMMARIZATION_MODEL_ENDPOINT: ${{ secrets.SUMMARIZATION_MODEL_ENDPOINT }}
+          # Gmail
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          # Minio
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_REGION: ${{ secrets.MINIO_REGION }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          MINIO_STORAGE_PREFIX: ${{ secrets.MINIO_STORAGE_PREFIX }}
+          MINIO_PUBLIC_BROWSER: ${{ secrets.MINIO_PUBLIC_BROWSER }}
+          # Advanced RAG
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          USE_HYBRID_SEARCH: ${{ secrets.USE_HYBRID_SEARCH }}
+          HYBRID_MIN_COSINE: ${{ secrets.HYBRID_MIN_COSINE }}
+          HYBRID_TOP_K: ${{ secrets.HYBRID_TOP_K }}
+          HYBRID_ALPHA: ${{ secrets.HYBRID_ALPHA }}
+          RERANK_ENABLED: ${{ secrets.RERANK_ENABLED }}
+          RERANK_TOPN: ${{ secrets.RERANK_TOPN }}
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+          RERANK_MODEL_NAME: ${{ secrets.RERANK_MODEL_NAME }}
+          CACHE_ENABLED: ${{ secrets.CACHE_ENABLED }}
+          SEMANTIC_TOPK: ${{ secrets.SEMANTIC_TOPK }}
+          CACHE_TTL_SEMRETR: ${{ secrets.CACHE_TTL_SEMRETR }}
+          MEM_SEMANTIC_WRITE_ENABLED: ${{ secrets.MEM_SEMANTIC_WRITE_ENABLED }}
+          MEM_EPISODIC_ENABLED: ${{ secrets.MEM_EPISODIC_ENABLED }}
+          MEM_PROCEDURAL_ENABLED: ${{ secrets.MEM_PROCEDURAL_ENABLED }}
+          EPISODIC_TOPK: ${{ secrets.EPISODIC_TOPK }}
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/wri-indonesia/nbs-llm:latest
+            ghcr.io/wri-indonesia/nbs-llm:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          secrets: |
+            "nextauth_secret=env:NEXTAUTH_SECRET"
+            "nextauth_url=env:NEXTAUTH_URL"
+            "google_client_id=env:GOOGLE_CLIENT_ID"
+            "google_client_secret=env:GOOGLE_CLIENT_SECRET"
+            "database_url=env:DATABASE_URL"
+            "geo_database_url=env:GEO_DATABASE_URL"
+            "openai_api_key=env:OPENAI_API_KEY"
+            "sql_generator_agent_model=env:SQL_GENERATOR_AGENT_MODEL"
+            "reprompt_agent_model=env:REPROMPT_AGENT_MODEL"
+            "summarization_model=env:SUMMARIZATION_MODEL"
+            "summarization_model_endpoint=env:SUMMARIZATION_MODEL_ENDPOINT"
+            "smtp_host=env:SMTP_HOST"
+            "smtp_port=env:SMTP_PORT"
+            "smtp_secure=env:SMTP_SECURE"
+            "smtp_user=env:SMTP_USER"
+            "smtp_pass=env:SMTP_PASS"
+            "smtp_from=env:SMTP_FROM"
+            "minio_endpoint=env:MINIO_ENDPOINT"
+            "minio_region=env:MINIO_REGION"
+            "minio_access_key=env:MINIO_ACCESS_KEY"
+            "minio_secret_key=env:MINIO_SECRET_KEY"
+            "minio_bucket=env:MINIO_BUCKET"
+            "minio_storage_prefix=env:MINIO_STORAGE_PREFIX"
+            "minio_public_browser=env:MINIO_PUBLIC_BROWSER"
+            "redis_host=env:REDIS_HOST"
+            "redis_port=env:REDIS_PORT"
+            "redis_password=env:REDIS_PASSWORD"
+            "use_hybrid_search=env:USE_HYBRID_SEARCH"
+            "hybrid_min_cosine=env:HYBRID_MIN_COSINE"
+            "hybrid_top_k=env:HYBRID_TOP_K"
+            "hybrid_alpha=env:HYBRID_ALPHA"
+            "rerank_enabled=env:RERANK_ENABLED"
+            "rerank_topn=env:RERANK_TOPN"
+            "hf_api_token=env:HF_API_TOKEN"
+            "rerank_model_name=env:RERANK_MODEL_NAME"
+            "cache_enabled=env:CACHE_ENABLED"
+            "semantic_topk=env:SEMANTIC_TOPK"
+            "cache_ttl_semretr=env:CACHE_TTL_SEMRETR"
+            "mem_semantic_write_enabled=env:MEM_SEMANTIC_WRITE_ENABLED"
+            "mem_episodic_enabled=env:MEM_EPISODIC_ENABLED"
+            "mem_procedural_enabled=env:MEM_PROCEDURAL_ENABLED"
+            "episodic_topk=env:EPISODIC_TOPK"
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.worker
+          push: true
+          tags: |
+            ghcr.io/wri-indonesia/nbs-llm-worker:latest
+            ghcr.io/wri-indonesia/nbs-llm-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VM
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            echo "Updating Data Lab Indonesia LLM container on llm.wri-indonesia.or.id..."
+            cd /home/${{ secrets.VM_USER }}/docker/nbs-llm
+
+            echo "🔐 Authenticating with GitHub Container Registry..."
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || {
+              echo "❌ Failed to authenticate with GitHub Container Registry"
+              exit 1
+            }
+
+            echo "🧩 Writing .env.production..."
+            cat > .env.production <<EOF
+            NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+            NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            GEO_DATABASE_URL=${{ secrets.GEO_DATABASE_URL }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            REPROMPT_AGENT_MODEL=${{ secrets.REPROMPT_AGENT_MODEL }}
+            EMBED_MODEL_NAME=${{ secrets.EMBED_MODEL_NAME }}
+            SQL_GENERATOR_AGENT_MODEL=${{ secrets.SQL_GENERATOR_AGENT_MODEL }}
+            SUMMARIZATION_MODEL=${{ secrets.SUMMARIZATION_MODEL }}
+            SUMMARIZATION_MODEL_ENDPOINT=${{ secrets.SUMMARIZATION_MODEL_ENDPOINT }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            SMTP_FROM=${{ secrets.SMTP_FROM }}
+            MINIO_ENDPOINT=${{ secrets.MINIO_ENDPOINT }}
+            MINIO_REGION=${{ secrets.MINIO_REGION }}
+            MINIO_ACCESS_KEY=${{ secrets.MINIO_ACCESS_KEY }}
+            MINIO_SECRET_KEY=${{ secrets.MINIO_SECRET_KEY }}
+            MINIO_BUCKET=${{ secrets.MINIO_BUCKET }}
+            MINIO_STORAGE_PREFIX=${{ secrets.MINIO_STORAGE_PREFIX }}
+            MINIO_PUBLIC_BROWSER=${{ secrets.MINIO_PUBLIC_BROWSER }}
+            REDIS_HOST=${{ secrets.REDIS_HOST }}
+            REDIS_PORT=${{ secrets.REDIS_PORT }}
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            USE_HYBRID_SEARCH=${{ secrets.USE_HYBRID_SEARCH }}
+            HYBRID_MIN_COSINE=${{ secrets.HYBRID_MIN_COSINE }}
+            HYBRID_TOP_K=${{ secrets.HYBRID_TOP_K }}
+            HYBRID_ALPHA=${{ secrets.HYBRID_ALPHA }}
+            RERANK_ENABLED=${{ secrets.RERANK_ENABLED }}
+            RERANK_TOPN=${{ secrets.RERANK_TOPN }}
+            HF_API_TOKEN=${{ secrets.HF_API_TOKEN }}
+            RERANK_MODEL_NAME=${{ secrets.RERANK_MODEL_NAME }}
+            CACHE_ENABLED=${{ secrets.CACHE_ENABLED }}
+            SEMANTIC_TOPK=${{ secrets.SEMANTIC_TOPK }}
+            CACHE_TTL_SEMRETR=${{ secrets.CACHE_TTL_SEMRETR }}
+            MEM_SEMANTIC_WRITE_ENABLED=${{ secrets.MEM_SEMANTIC_WRITE_ENABLED }}
+            MEM_EPISODIC_ENABLED=${{ secrets.MEM_EPISODIC_ENABLED }}
+            MEM_PROCEDURAL_ENABLED=${{ secrets.MEM_PROCEDURAL_ENABLED }}
+            EPISODIC_TOPK=${{ secrets.EPISODIC_TOPK }}
+            EOF
+
+            echo "🧩 Writing docker-compose.yml..."
+            cat > docker-compose.yml <<'EOF'
+
+            services:
+              redis:
+                image: redis:7-alpine
+                container_name: nbs-llm-redis
+                networks:
+                  - proxy
+                ports:
+                  - "6379:6379"
+                volumes:
+                  - redis-data:/data
+                command: redis-server --appendonly yes
+                restart: unless-stopped
+                healthcheck:
+                  test: ["CMD", "redis-cli", "ping"]
+                  interval: 5s
+                  timeout: 3s
+                  retries: 5
+
+              nbs-llm:
+                image: ghcr.io/wri-indonesia/nbs-llm:latest
+                container_name: nbs-llm
+                env_file:
+                  - .env.production
+                depends_on:
+                  redis:
+                    condition: service_healthy
+                expose:
+                  - "3000"
+                networks:
+                  - proxy
+                restart: unless-stopped
+
+              nbs-llm-worker:
+                image: ghcr.io/wri-indonesia/nbs-llm-worker:latest
+                container_name: nbs-llm-worker
+                networks:
+                  - proxy
+                env_file:
+                  - .env.production
+                environment:
+                  - REDIS_HOST=redis
+                  - REDIS_PORT=6379
+                depends_on:
+                  redis:
+                    condition: service_healthy
+                restart: unless-stopped
+
+            volumes:
+              redis-data:
+
+            networks:
+              proxy:
+                external: true
+            EOF
+
+            echo "📥 Pulling latest images (all services)..."
+            docker compose pull || {
+              echo "❌ Failed to pull Docker image"
+              exit 1
+            }
+
+            echo "🚀 Starting container..."
+            docker compose up -d || {
+              echo "❌ Failed to start container"
+              exit 1
+            }
+
+            echo "🧾 Baseline resolve (idempotent)..."
+            docker run --rm --env-file .env.production --network host \
+              -e NODE_OPTIONS=--max-old-space-size=256 \
+              ghcr.io/wri-indonesia/nbs-llm:latest \
+              sh -lc 'npx prisma migrate resolve --applied 000_init || echo "baseline already applied"'
+
+            echo "🌱 Deploying database (migrations)..."
+            docker run --rm --env-file .env.production --network host \
+              -e NODE_OPTIONS=--max-old-space-size=256 \
+              ghcr.io/wri-indonesia/nbs-llm:latest \
+              npx prisma migrate deploy
+
+            echo "🌱 Seeding database..."
+            docker run --rm --env-file .env.production --network host \
+              ghcr.io/wri-indonesia/nbs-llm:latest \
+              sh -c 'npm i -g tsx && PRISMA_SEED="tsx prisma/seed.ts" npx prisma db seed'
+
+            echo "🧹 Cleaning up unused images..."
+            docker image prune -f
+            echo "✅ Deployment completed successfully!"
+

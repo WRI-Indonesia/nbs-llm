@@ -86,8 +86,8 @@ SQL Query:`
         })
 
         const sql = completion.choices[0]?.message?.content?.trim() || ''
-        const usage: TokenUsage = completion.usage ? { prompt: completion.usage.prompt_tokens ?? 0, completion: completion.usage.completion_tokens ?? 0, total: (completion.usage.total_tokens ?? 0) || ((completion.usage.prompt_tokens ?? 0) + (completion.usage.completion_tokens ?? 0)), source: 'measured' } : 
-                                { prompt: Math.ceil(prompt.length / 4), completion: Math.ceil(sql.length / 4), total: Math.ceil(prompt.length / 4) + Math.ceil(sql.length / 4), source: 'estimated' }
+        const usage: TokenUsage = completion.usage ? { prompt: completion.usage.prompt_tokens ?? 0, completion: completion.usage.completion_tokens ?? 0, total: (completion.usage.total_tokens ?? 0) || ((completion.usage.prompt_tokens ?? 0) + (completion.usage.completion_tokens ?? 0)), source: 'measured' } :
+            { prompt: Math.ceil(prompt.length / 4), completion: Math.ceil(sql.length / 4), total: Math.ceil(prompt.length / 4) + Math.ceil(sql.length / 4), source: 'estimated' }
 
         return { sql, usage }
     } catch (error) {

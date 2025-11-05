@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Load user config from database
-    const dbUser = await prisma.user.findUnique({ where: { id: user.id } })
+    const dbUser: any = await prisma.user.findUnique({ where: { id: user.id } })
     const userConfig = (dbUser?.config as any) || {}
 
     const body: SearchRequest = await request.json()
@@ -290,7 +290,22 @@ export async function POST(request: NextRequest) {
             ...relevantMinioDocs.map((r) => r.document_text)
           ]
         )
-        // assistant
+        // Compute usage and cost, persist, then respond
+        const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
+        const combinedUsage = {
+          embedding: embUsage,
+          sql: sqlUsage ?? null,
+          summarize: ragRes.usage,
+          total: embUsage.total + (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0)
+        }
+        const embeddingModel = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
+        const sqlModel = userConfig.sqlGeneratorAgentModel ?? process.env.SQL_GENERATOR_AGENT_MODEL
+        const sumModel = userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL
+        const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
+        const sqlUsd = costUsdFor(sqlModel, (sqlUsage?.prompt ?? 0), (sqlUsage?.completion ?? 0))
+        const sumUsd = costUsdFor(sumModel, (ragRes.usage?.prompt ?? 0), (ragRes.usage?.completion ?? 0))
+        const combinedCost = { embeddingUsd: embUsd, sqlUsd, summarizeUsd: sumUsd, totalUsd: embUsd + sqlUsd + sumUsd }
+
         await saveChatHistoryToDB({
           role: 'assistant',
           projectId,
@@ -299,27 +314,13 @@ export async function POST(request: NextRequest) {
           sqlQuery,
           ragNodeDocuments: relevantNodeDocs,
           ragMinioDocuments: relevantMinioDocs,
-          improvedPrompt: JSON.stringify({ tokenUsage: { sql: sqlUsage ?? null, summarize: ragRes.usage, total: (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0) } }),
+          improvedPrompt: JSON.stringify({ tokenUsage: combinedUsage, tokenCost: combinedCost }),
+          tokenUsage: combinedUsage,
+          tokenCost: combinedCost,
           data: [],
           timestamp: new Date()
         })
 
-        // Include tokenUsage in API response
-        const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
-        const combinedUsage = {
-          embedding: embUsage,
-          sql: sqlUsage ?? null,
-          summarize: ragRes.usage,
-          total: embUsage.total + (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0)
-        }
-        // Cost calculation (USD) using OPENAI_PRICES map and user config models
-        const embeddingModel = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
-        const sqlModel = userConfig.sqlGeneratorAgentModel ?? process.env.SQL_GENERATOR_AGENT_MODEL
-        const sumModel = userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL
-        const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
-        const sqlUsd = costUsdFor(sqlModel, (sqlUsage?.prompt ?? 0), (sqlUsage?.completion ?? 0))
-        const sumUsd = costUsdFor(sumModel, (ragRes.usage?.prompt ?? 0), (ragRes.usage?.completion ?? 0))
-        const combinedCost = { embeddingUsd: embUsd, sqlUsd, summarizeUsd: sumUsd, totalUsd: embUsd + sqlUsd + sumUsd }
         return NextResponse.json({ status: 'success', tokenUsage: combinedUsage, tokenCost: combinedCost })
       }
     }
@@ -355,6 +356,20 @@ export async function POST(request: NextRequest) {
       await saveSemanticMemory({ userId: user.id, projectId, content: toStore, tags: ['answer','auto'] })
     }
 
+    // Compute usage+cost for persistence
+    const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
+    const combinedUsagePersist = {
+      embedding: embUsage,
+      sql: null,
+      summarize: sumObj.usage,
+      total: embUsage.total + sumObj.usage.total
+    }
+    const embeddingModelPersist = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
+    const sumModelPersist = userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL
+    const embUsdPersist = costUsdFor(embeddingModelPersist, embUsage.prompt, 0)
+    const sumUsdPersist = costUsdFor(sumModelPersist, (sumObj.usage?.prompt ?? 0), (sumObj.usage?.completion ?? 0))
+    const combinedCostPersist = { embeddingUsd: embUsdPersist, sqlUsd: 0, summarizeUsd: sumUsdPersist, totalUsd: embUsdPersist + sumUsdPersist }
+
     // assistant
     await saveChatHistoryToDB({
       role: 'assistant',
@@ -364,7 +379,9 @@ export async function POST(request: NextRequest) {
       sqlQuery,
       ragNodeDocuments: relevantNodeDocs,
       ragMinioDocuments: relevantMinioDocs,
-      improvedPrompt: JSON.stringify({ tokenUsage: { sql: null, summarize: sumObj.usage, total: sumObj.usage.total } }),
+      improvedPrompt: JSON.stringify({ tokenUsage: combinedUsagePersist, tokenCost: combinedCostPersist }),
+      tokenUsage: combinedUsagePersist,
+      tokenCost: combinedCostPersist,
       data,
       timestamp: new Date()
     })
@@ -392,7 +409,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Include tokenUsage in API response
-    const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
     const combinedUsage = {
       embedding: embUsage,
       sql: null,

@@ -26,7 +26,22 @@ export async function getChatHistoryFromDB(userId: string, projectId: string): P
 /**
  * Saves chat history to database for a specific user and project
  */
-export async function saveChatHistoryToDB(chatHistory: Omit<ChatHistory, 'id'>): Promise<void> {
+type SaveChatHistoryInput = {
+  userId: string
+  projectId: string
+  role: string
+  content: string
+  sqlQuery?: string | null
+  ragNodeDocuments?: any
+  ragMinioDocuments?: any
+  improvedPrompt?: string | null
+  data?: any
+  timestamp: Date | string
+  tokenUsage?: any
+  tokenCost?: any
+}
+
+export async function saveChatHistoryToDB(chatHistory: SaveChatHistoryInput): Promise<void> {
   try {
     await prisma.chatHistory.create({
       data: {
@@ -38,6 +53,9 @@ export async function saveChatHistoryToDB(chatHistory: Omit<ChatHistory, 'id'>):
         data: chatHistory.data ? JSON.stringify(chatHistory.data) : undefined,
         ragMinioDocuments: chatHistory.ragMinioDocuments ? JSON.stringify(chatHistory.ragMinioDocuments) : undefined,
         ragNodeDocuments: chatHistory.ragNodeDocuments ? JSON.stringify(chatHistory.ragNodeDocuments) : undefined,
+        improvedPrompt: chatHistory.improvedPrompt || null,
+        tokenUsage: chatHistory.tokenUsage ? chatHistory.tokenUsage : undefined,
+        tokenCost: chatHistory.tokenCost ? chatHistory.tokenCost : undefined,
         timestamp: new Date(chatHistory.timestamp || new Date().toISOString())
       }
     })

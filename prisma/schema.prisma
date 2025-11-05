@@ -179,6 +179,8 @@ model ChatHistory {
   ragMinioDocuments Json?
   improvedPrompt    String?
   data              Json?
+  tokenUsage        Json?
+  tokenCost         Json?
   timestamp         DateTime @default(now())
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

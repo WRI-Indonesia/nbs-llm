@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { useChat } from '../_hooks/useChat'
 import { SqlPopover } from './sql-popover'
+import { TokenUsagePopover } from './token-usage-popover'
 import { RagNodePopover } from './rag-node-popover'
 import { DataPopover } from './data-popover'
 import { RagMinioPopover } from './rag-minio-popover'
@@ -73,7 +74,7 @@ export function ChatSidebar() {
         recognition.start()
         setIsListening(true)
       }
-    } catch (_e) {
+    } catch {
       setIsListening(false)
     }
   }
@@ -152,26 +153,7 @@ export function ChatSidebar() {
                       <RagNodePopover id={message.id} />
                       <RagMinioPopover id={message.id} />
                       <DataPopover id={message.id} />
-
-                      {/* Token usage pill */}
-                      {(() => {
-                        try {
-                          const meta = message.improvedPrompt ? JSON.parse(message.improvedPrompt) : null
-                          const tu = meta?.tokenUsage
-                          if (!tu) return null
-                          const sql = tu.sql ? `SQL P:${tu.sql.prompt} C:${tu.sql.completion}` : ''
-                          const sum = tu.summarize ? `SUM P:${tu.summarize.prompt} C:${tu.summarize.completion}` : ''
-                          const total = typeof tu.total === 'number' ? `T:${tu.total}` : ''
-                          const text = [sql, sum, total].filter(Boolean).join(' | ')
-                          return text ? (
-                            <span className="ml-2 text-[11px] rounded-full bg-slate-200 text-slate-700 px-2 py-0.5">
-                              {text}
-                            </span>
-                          ) : null
-                        } catch {
-                          return null
-                        }
-                      })()}
+                      <TokenUsagePopover id={message.id} />
                     </div>
                   )}
                 </div>

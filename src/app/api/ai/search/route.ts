@@ -15,7 +15,7 @@ import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
 import { cacheGetOrSet, sha256 } from './_utils/cache'
 import { saveSemanticMemory, retrieveEpisodicMemory, logProcedure } from './_utils/memory'
-import { repromptQuery } from './_utils/reprompt-query-agent'
+import { costUsdFor } from './_utils/pricing'
 
 export async function POST(request: NextRequest) {
   try {
@@ -294,7 +294,23 @@ export async function POST(request: NextRequest) {
           timestamp: new Date()
         })
 
-        return NextResponse.json({ status: 'success' })
+        // Include tokenUsage in API response
+        const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
+        const combinedUsage = {
+          embedding: embUsage,
+          sql: sqlUsage ?? null,
+          summarize: ragRes.usage,
+          total: embUsage.total + (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0)
+        }
+        // Cost calculation (USD) using OPENAI_PRICES map and env models
+        const embeddingModel = process.env.EMBEDDING_AGENT_MODEL
+        const sqlModel = process.env.SQL_GENERATOR_AGENT_MODEL
+        const sumModel = process.env.SUMMARIZATION_MODEL
+        const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
+        const sqlUsd = costUsdFor(sqlModel, (sqlUsage?.prompt ?? 0), (sqlUsage?.completion ?? 0))
+        const sumUsd = costUsdFor(sumModel, (ragRes.usage?.prompt ?? 0), (ragRes.usage?.completion ?? 0))
+        const combinedCost = { embeddingUsd: embUsd, sqlUsd, summarizeUsd: sumUsd, totalUsd: embUsd + sqlUsd + sumUsd }
+        return NextResponse.json({ status: 'success', tokenUsage: combinedUsage, tokenCost: combinedCost })
       }
     }
 
@@ -362,7 +378,22 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ status: 'success' })
+    // Include tokenUsage in API response
+    const embUsage = { prompt: Math.ceil(newQuery.length / 4), completion: 0, total: Math.ceil(newQuery.length / 4), source: 'estimated' as const }
+    const combinedUsage = {
+      embedding: embUsage,
+      sql: null,
+      summarize: sumObj.usage,
+      total: embUsage.total + sumObj.usage.total
+    }
+    // Cost calculation (USD) using OPENAI_PRICES map
+    const embeddingModel = process.env.EMBEDDING_AGENT_MODEL
+    const sumModel = process.env.SUMMARIZATION_MODEL
+    const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
+    const sqlUsd = 0
+    const sumUsd = costUsdFor(sumModel, (sumObj.usage?.prompt ?? 0), (sumObj.usage?.completion ?? 0))
+    const combinedCost = { embeddingUsd: embUsd, sqlUsd, summarizeUsd: sumUsd, totalUsd: embUsd + sqlUsd + sumUsd }
+    return NextResponse.json({ status: 'success', tokenUsage: combinedUsage, tokenCost: combinedCost })
 
   } catch (error) {
     console.error('Error in search API:', error)

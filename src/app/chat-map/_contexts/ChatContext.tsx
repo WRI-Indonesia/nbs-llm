@@ -170,10 +170,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   }, [])
 
   useEffect(() => {
-    if (chatHistoryData?.chatHistory) {
+    if (chatHistoryData?.chatHistory && !isSearching) {
       setMessages(chatHistoryData.chatHistory)
     }
-  }, [chatHistoryData])
+  }, [chatHistoryData, isSearching])
 
   useEffect(() => {
     if (chatHistoryError) {
@@ -226,8 +226,26 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         return
       }
 
-      await response.json()
-      await mutateChatHistory()
+      const resJson = await response.json()
+      const refreshed = await mutateChatHistory()
+      // Safely attach tokenUsage to the latest assistant message from refreshed data
+      if ((resJson?.tokenUsage || resJson?.tokenCost) && refreshed?.chatHistory) {
+        const list = [...refreshed.chatHistory] as any[]
+        let idx = -1
+        let latestTs = 0
+        for (let i = 0; i < list.length; i++) {
+          const m = list[i]
+          if (m.role === 'assistant') {
+            const ts = new Date(m.timestamp).getTime()
+            if (ts >= latestTs) { latestTs = ts; idx = i }
+          }
+        }
+        if (idx >= 0) {
+          if (resJson.tokenUsage) list[idx].tokenUsage = resJson.tokenUsage
+          if (resJson.tokenCost) list[idx].tokenCost = resJson.tokenCost
+          setMessages(list as any)
+        }
+      }
 
     } catch (err) {
       console.error('Error sending message:', err)

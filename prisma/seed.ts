@@ -170,9 +170,10 @@ await prisma.$executeRawUnsafe(`
 `);
 
 // ---------- hybrid search functions ----------
+
+// -- Step 6: Create hybrid search function for minio_docs
+// -- Combines vector similarity (cosine) with keyword search (BM25-like using ts_rank)
 await prisma.$executeRawUnsafe(`
--- Step 6: Create hybrid search function for minio_docs
--- Combines vector similarity (cosine) with keyword search (BM25-like using ts_rank)
 CREATE OR REPLACE FUNCTION public.match_minio_docs_hybrid(
   query_text TEXT,
   query_embedding_str TEXT,

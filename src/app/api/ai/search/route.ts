@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/auth'
 // import { repromptQuery } from './_utils/reprompt-query-agent'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
-import { MinioDocMatch, NodeDocMatch, SearchRequest } from './_utils/types'
+import { MinioDocMatch, NodeDocMatch, SearchRequest, SumObj } from './_utils/types'
 import { createErrorResponse } from './_utils/response-handler'
 import { saveChatHistoryToDB } from './_utils/chat-history-utils'
 import { generateQueryEmbedding } from './_utils/generate-embedding-agent'
@@ -15,6 +15,7 @@ import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
 import { cacheGetOrSet, sha256 } from './_utils/cache'
 import { saveSemanticMemory, retrieveEpisodicMemory, logProcedure } from './_utils/memory'
+import { repromptQuery } from './_utils/reprompt-query-agent'
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +34,8 @@ export async function POST(request: NextRequest) {
       projectId,
       timestamp = new Date(),
       use_hybrid: use_hybrid_raw,
-      hybrid_alpha: hybrid_alpha_raw
+      hybrid_alpha: hybrid_alpha_raw,
+      location = { district: [], province: [] }
     } = body
 
     // Strongly-typed knobs with env fallbacks
@@ -100,6 +102,7 @@ export async function POST(request: NextRequest) {
      */
     // const repromtResult = await repromptQuery(query, location.district)
     // const newQuery = repromtResult.result
+    // console.log('newQuery', newQuery)
     const newQuery = query
 
     // If prompt is unable to re-prompt it will return false
@@ -310,8 +313,7 @@ export async function POST(request: NextRequest) {
     const sumRes2 = await cacheGetOrSet(sumKey, 60 * 20, async () => (
       await generateAnswer(newQuery, data, ctxDocs)
     ))
-    type SumUsage = { prompt: number; completion: number; total: number; source: 'measured' | 'estimated' }
-    type SumObj = { text: string; usage: SumUsage }
+
     const sumAny: any = sumRes2 as any
     const sumObj: SumObj = (typeof sumAny === 'string')
       ? { text: sumAny as string, usage: { prompt: 0, completion: Math.ceil((sumAny as string).length / 4), total: Math.ceil((sumAny as string).length / 4), source: 'estimated' } }

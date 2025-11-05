@@ -41,9 +41,7 @@ export async function POST(request: NextRequest) {
       const queued = await indexQueue.getJob(jobId)
       if (queued) {
         await queued.remove()
-        console.log(`Removed job ${jobId} from queue`)
-      } else {
-        console.log(`Job ${jobId} not present in queue`)
+        } else {
       }
     } catch (err) {
       // non-fatal: log and continue to update DB
@@ -59,7 +57,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    console.log(`Job ${jobId} cancelled (DB updated)`)
 
     return NextResponse.json({ success: true, message: 'Job cancelled successfully' })
   } catch (error) {

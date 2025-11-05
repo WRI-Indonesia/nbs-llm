@@ -44,6 +44,27 @@ async function main() {
 
   console.log('👤 Upserting admin user...')
   const hashedPassword = await bcrypt.hash('admin123', 12)
+  const defaultConfig = {
+    chunkSize: 1000,
+    overlap: 200,
+    topK: 10,
+    minCos: 0.2,
+    cacheEnabled: true,
+    semanticTopK: 10,
+    cacheTtlSemretr: 1800,
+    useHybridSearch: true,
+    hybridMinCosine: 0.2,
+    hybridTopK: 5,
+    hybridAlpha: 0.7,
+    rerankEnabled: true,
+    rerankTopN: 20,
+    rerankModelName: 'cross-encoder/ms-marco-MiniLM-L-6-v2',
+    repromptAgentModel: 'gpt-4o-mini',
+    sqlGeneratorAgentModel: 'gpt-4o',
+    embeddingAgentModel: 'text-embedding-3-large',
+    summarizationModelEndpoint: 'https://seallm.wri-indonesia.or.id/v1/chat/completions',
+    summarizationModel: 'SeaLLMs/SeaLLM-7B-v2.5',
+  }
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: {
@@ -51,31 +72,15 @@ async function main() {
       emailVerified: new Date(),
       password: hashedPassword,
       role: 'ADMIN',
+      config: defaultConfig,
     },
     create: {
       name: 'Admin User',
       email: 'admin@example.com',
       password: hashedPassword,
       role: 'ADMIN',
+      config: defaultConfig,
     },
-  })
-
-  console.log('⚙️ Upserting default config for admin user...')
-  await prisma.config.upsert({
-    where: { userId: adminUser.id },
-    update: {
-      chunkSize: 1000,
-      overlap: 200,
-      topK: 10,
-      minCos: 0.2,
-    },
-    create: {
-      userId: adminUser.id,
-      chunkSize: 1000,
-      overlap: 200,
-      topK: 10,
-      minCos: 0.2,
-    } as any,
   })
 
   console.log('📊 Upserting default flow project...')

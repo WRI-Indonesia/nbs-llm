@@ -25,6 +25,10 @@ export async function POST(request: NextRequest) {
       return createErrorResponse('Authentication required', undefined, 401)
     }
 
+    // Load user config from database
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } })
+    const userConfig = (dbUser?.config as any) || {}
+
     const body: SearchRequest = await request.json()
     // Keep the original destructure but do not rely on env defaults here
     const {
@@ -38,22 +42,24 @@ export async function POST(request: NextRequest) {
       location = { district: [], province: [] }
     } = body
 
-    // Strongly-typed knobs with env fallbacks
+    // Priority: request param > user config > env var fallback
     const min_cosine = typeof min_cosine_raw === 'number'
       ? min_cosine_raw
-      : Number(min_cosine_raw ?? process.env.HYBRID_MIN_COSINE ?? 0.2)
+      : Number(min_cosine_raw ?? userConfig.hybridMinCosine ?? process.env.HYBRID_MIN_COSINE ?? 0.2)
 
     const top_k = typeof top_k_raw === 'number'
       ? top_k_raw
-      : Number(top_k_raw ?? process.env.HYBRID_TOP_K ?? 5)
+      : Number(top_k_raw ?? userConfig.hybridTopK ?? process.env.HYBRID_TOP_K ?? 5)
 
     const use_hybrid = typeof use_hybrid_raw === 'boolean'
       ? use_hybrid_raw
-      : String(use_hybrid_raw ?? process.env.USE_HYBRID_SEARCH ?? 'true').toLowerCase() !== 'false'
+      : typeof use_hybrid_raw === 'undefined'
+        ? (userConfig.useHybridSearch ?? (process.env.USE_HYBRID_SEARCH ?? 'true').toLowerCase() !== 'false')
+        : use_hybrid_raw
 
     const hybrid_alpha = typeof hybrid_alpha_raw === 'number'
       ? hybrid_alpha_raw
-      : Number(hybrid_alpha_raw ?? process.env.HYBRID_ALPHA ?? 0.7)
+      : Number(hybrid_alpha_raw ?? userConfig.hybridAlpha ?? process.env.HYBRID_ALPHA ?? 0.7)
 
     // Memory feature flags
     const MEM_SEMANTIC_WRITE_ENABLED = (process.env.MEM_SEMANTIC_WRITE_ENABLED ?? 'true').toLowerCase() !== 'false'
@@ -102,7 +108,6 @@ export async function POST(request: NextRequest) {
      */
     // const repromtResult = await repromptQuery(query, location.district)
     // const newQuery = repromtResult.result
-    // console.log('newQuery', newQuery)
     const newQuery = query
 
     // If prompt is unable to re-prompt it will return false
@@ -129,9 +134,11 @@ export async function POST(request: NextRequest) {
     * We need to generate embedding from re-prompt query agent
     * so later we can find similarity in DB
     */
-    const embKey = `emb:v1:${process.env.SQL_GENERATOR_AGENT_MODEL || 'gpt'}:${sha256(newQuery)}`
+    const sqlModelForCache = (userConfig.sqlGeneratorAgentModel ?? process.env.SQL_GENERATOR_AGENT_MODEL) || 'gpt'
+    const embKey = `emb:v1:${sqlModelForCache}:${sha256(newQuery)}`
+    const embeddingModelForEmbedding = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL ?? "text-embedding-3-large"
     const queryEmbedding = await cacheGetOrSet(embKey, 60 * 60 * 24 * 30, async () => {
-      return await generateQueryEmbedding(newQuery)
+      return await generateQueryEmbedding(newQuery, embeddingModelForEmbedding)
     })
     const embeddingStr = JSON.stringify(queryEmbedding);
 
@@ -141,8 +148,9 @@ export async function POST(request: NextRequest) {
       : []
 
     // Semantic cache: retrieve top semantic facts from mem_semantic and cache them short-term
-    const TTL_SEMRETR = Number(process.env.CACHE_TTL_SEMRETR ?? 60 * 30)
-    const semTopK = Number(process.env.SEMANTIC_TOPK ?? 8)
+    // Priority: user config > env var fallback
+    const TTL_SEMRETR = userConfig.cacheTtlSemretr ?? Number(process.env.CACHE_TTL_SEMRETR ?? 60 * 30)
+    const semTopK = userConfig.semanticTopK ?? Number(process.env.SEMANTIC_TOPK ?? 8)
     const semKey = `semretr:v1:${projectId}:${sha256(newQuery)}:${semTopK}`
     const semanticSnippets = await cacheGetOrSet(semKey, TTL_SEMRETR, async () => {
       try {
@@ -231,14 +239,16 @@ export async function POST(request: NextRequest) {
     // only generate SQL Query if relevantNodeDocs is not empty
     if (relevantNodeDocs.length !== 0) {
       // Rerank: combine schema node docs first, prioritize top-N (guarded by flag)
-      const rerankEnabled = (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false'
+      // Priority: user config > env var fallback
+      const rerankEnabled = userConfig.rerankEnabled ?? (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false'
       const candidateDocs = relevantNodeDocs.map((d) => ({ id: String(d.id), text: d.document_text }))
       let relevantNodeDocsText: string[]
       if (rerankEnabled) {
-        const topN = Math.min(Number(process.env.RERANK_TOPN ?? 20), candidateDocs.length)
-        const rrKey = `rr:v1:${process.env.RERANK_MODEL_NAME || 'cross-encoder/ms-marco-MiniLM-L-6-v2'}:${sha256(newQuery)}:${topN}`
+        const topN = Math.min(userConfig.rerankTopN ?? Number(process.env.RERANK_TOPN ?? 20), candidateDocs.length)
+        const rerankModelName = (userConfig.rerankModelName ?? process.env.RERANK_MODEL_NAME) || 'cross-encoder/ms-marco-MiniLM-L-6-v2'
+        const rrKey = `rr:v1:${rerankModelName}:${sha256(newQuery)}:${topN}`
         const reranked = await cacheGetOrSet(rrKey, Number(process.env.CACHE_TTL_RERANK ?? 60 * 20), async () => (
-          await rerankDocuments(newQuery, candidateDocs, { topN })
+          await rerankDocuments(newQuery, candidateDocs, { topN, model: rerankModelName })
         ))
         relevantNodeDocsText = reranked.map((r) => r.text)
       } else {
@@ -257,8 +267,9 @@ export async function POST(request: NextRequest) {
       */
       const sqlKey = `sqlgen:v1:${projectId}:${sha256(newQuery + '|' + relevantNodeDocsText.join('\n').slice(0, 4000))}`
 
+      const sqlModelForGen = userConfig.sqlGeneratorAgentModel ?? process.env.SQL_GENERATOR_AGENT_MODEL ?? "gpt-4o"
       const sqlGenRes = await cacheGetOrSet(sqlKey, 60 * 60 * 12, async () => (
-        await generateSQLQuery(newQuery, relevantNodeDocsText)
+        await generateSQLQuery(newQuery, relevantNodeDocsText, sqlModelForGen)
       ))
       sqlQuery = sqlGenRes.sql
       const sqlUsage = sqlGenRes.usage
@@ -302,10 +313,10 @@ export async function POST(request: NextRequest) {
           summarize: ragRes.usage,
           total: embUsage.total + (sqlUsage?.total ?? 0) + (ragRes.usage?.total ?? 0)
         }
-        // Cost calculation (USD) using OPENAI_PRICES map and env models
-        const embeddingModel = process.env.EMBEDDING_AGENT_MODEL
-        const sqlModel = process.env.SQL_GENERATOR_AGENT_MODEL
-        const sumModel = process.env.SUMMARIZATION_MODEL
+        // Cost calculation (USD) using OPENAI_PRICES map and user config models
+        const embeddingModel = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
+        const sqlModel = userConfig.sqlGeneratorAgentModel ?? process.env.SQL_GENERATOR_AGENT_MODEL
+        const sumModel = userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL
         const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
         const sqlUsd = costUsdFor(sqlModel, (sqlUsage?.prompt ?? 0), (sqlUsage?.completion ?? 0))
         const sumUsd = costUsdFor(sumModel, (ragRes.usage?.prompt ?? 0), (ragRes.usage?.completion ?? 0))
@@ -325,9 +336,12 @@ export async function POST(request: NextRequest) {
       ...episodicSnippets
     ]
     // bump cache namespace to avoid legacy string payloads
-    const sumKey = `sum:v2:${process.env.SUMMARIZATION_MODEL || 'SeaLLM'}:${sha256(newQuery + '|' + JSON.stringify(data).slice(0, 4000) + '|' + sha256(ctxDocs.join('\n').slice(0, 4000)))}`
+    const sumModelForCache = (userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL) || 'SeaLLM'
+    const sumKey = `sum:v2:${sumModelForCache}:${sha256(newQuery + '|' + JSON.stringify(data).slice(0, 4000) + '|' + sha256(ctxDocs.join('\n').slice(0, 4000)))}`
+    const summarizationEndpoint = (userConfig.summarizationModelEndpoint ?? process.env.SUMMARIZATION_MODEL_ENDPOINT) || ''
+    const summarizationModelForGen = (userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL) || ''
     const sumRes2 = await cacheGetOrSet(sumKey, 60 * 20, async () => (
-      await generateAnswer(newQuery, data, ctxDocs)
+      await generateAnswer(newQuery, data, ctxDocs, summarizationEndpoint, summarizationModelForGen)
     ))
 
     const sumAny: any = sumRes2 as any
@@ -367,7 +381,7 @@ export async function POST(request: NextRequest) {
           hybrid_alpha,
           min_cosine,
           top_k,
-          rerankEnabled: (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false',
+          rerankEnabled: userConfig.rerankEnabled ?? (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false',
           semanticSnippets: semanticSnippets.length,
           episodicSnippets: episodicSnippets.length,
           nodeDocs: (typeof relevantNodeDocs !== 'undefined') ? relevantNodeDocs.length : 0,
@@ -386,9 +400,9 @@ export async function POST(request: NextRequest) {
       summarize: sumObj.usage,
       total: embUsage.total + sumObj.usage.total
     }
-    // Cost calculation (USD) using OPENAI_PRICES map
-    const embeddingModel = process.env.EMBEDDING_AGENT_MODEL
-    const sumModel = process.env.SUMMARIZATION_MODEL
+    // Cost calculation (USD) using OPENAI_PRICES map and user config models
+    const embeddingModel = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
+    const sumModel = userConfig.summarizationModel ?? process.env.SUMMARIZATION_MODEL
     const embUsd = costUsdFor(embeddingModel, embUsage.prompt, 0)
     const sqlUsd = 0
     const sumUsd = costUsdFor(sumModel, (sumObj.usage?.prompt ?? 0), (sumObj.usage?.completion ?? 0))

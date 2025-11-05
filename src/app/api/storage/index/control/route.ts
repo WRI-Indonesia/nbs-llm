@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
         data: { status: 'paused' }
       })
 
-      console.log(`Job ${jobId} paused (DB updated)`)
       return NextResponse.json({ success: true, status: 'paused', message: 'Job paused successfully' })
     }
 
@@ -69,9 +68,7 @@ export async function POST(request: NextRequest) {
             // Only remove if it's safe (not active/locked)
             if (['waiting', 'delayed', 'paused', 'waiting-children'].includes(state)) {
               await existing.remove()
-              console.log(`Removed existing queued job ${jobId} (state=${state}) before re-queue`)
             } else {
-              console.log(`Skip removal for job ${jobId} because state=${state} (likely active)`)
             }
           } catch (stateErr) {
             console.warn(`Could not determine state for job ${jobId} prior to re-queue:`, stateErr)
@@ -94,7 +91,6 @@ export async function POST(request: NextRequest) {
             jobId: jobId, // reuse same ID so it can be referenced/removed later
           }
         )
-        console.log(`Job ${jobId} re-queued for processing`)
       } catch (err) {
         console.error(`Failed to re-queue job ${jobId}:`, err)
         // revert status so admin can retry
@@ -122,15 +118,12 @@ export async function POST(request: NextRequest) {
             const state = await queued.getState()
             if (['waiting', 'delayed', 'paused', 'waiting-children'].includes(state)) {
               await queued.remove()
-              console.log(`Removed job ${jobId} from queue (state=${state})`)
             } else {
-              console.log(`Job ${jobId} is ${state} (likely active/locked); marking as cancelled in DB and letting worker stop.`)
             }
           } catch (stateErr) {
             console.warn(`Could not determine job state for ${jobId} during cancel:`, stateErr)
           }
         } else {
-          console.log(`Job ${jobId} not found in queue (maybe already processed)`)
         }
       } catch (err) {
         console.warn(`Error while removing job ${jobId} from queue:`, err)
@@ -141,7 +134,6 @@ export async function POST(request: NextRequest) {
         data: { status: 'cancelled', completedAt: new Date() }
       })
 
-      console.log(`Job ${jobId} cancelled (DB updated)`)
       return NextResponse.json({ success: true, message: 'Job cancelled successfully' })
     }
 

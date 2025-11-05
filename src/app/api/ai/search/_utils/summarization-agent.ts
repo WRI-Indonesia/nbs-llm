@@ -31,10 +31,12 @@ function truncateToTokens(text: string, maxTokens: number): string {
 export async function generateAnswer(
     userQuery: string,
     data: any[] = [],
-    context: any[] = []
+    context: any[] = [],
+    endpoint?: string,
+    model?: string
 ): Promise<{ text: string; usage: TokenUsage }> {
-    const SEA_LLM_ENDPOINT = (process.env.SUMMARIZATION_MODEL_ENDPOINT || '').trim()
-    const SEA_LLM_MODEL = (process.env.SUMMARIZATION_MODEL || '').trim()
+    const SEA_LLM_ENDPOINT = (endpoint || process.env.SUMMARIZATION_MODEL_ENDPOINT || '').trim()
+    const SEA_LLM_MODEL = (model || process.env.SUMMARIZATION_MODEL || '').trim()
 
     if (!SEA_LLM_ENDPOINT || !SEA_LLM_MODEL) {
         return {
@@ -69,8 +71,6 @@ export async function generateAnswer(
         const targetLanguageName = detected.name // e.g., "Indonesian"
         const targetLanguageCode = detected.code2 // e.g., "id"
 
-        console.log(userQuery)
-        console.log(detected)
 
         // --- Build prompt ---
         const contextString = limitedContext.length

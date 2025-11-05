@@ -41,10 +41,10 @@ model User {
   image         String?
   password      String?
   role          UserRole      @default(USER)
+  config        Json?
   accounts      Account[]
   sessions      Session[]
   chatHistory   ChatHistory[]
-  config        Config?
 }
 
 model VerificationToken {
@@ -197,19 +197,6 @@ model GeoLocation {
   @@map("geo_locations")
 }
 
-model Config {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  chunkSize Int      @default(1000)
-  overlap   Int      @default(200)
-  topK      Int      @default(10)
-  minCos    Float    @default(0.2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("configs")
-}
 
 model MemSemantic {
   id         Int                   @id @default(autoincrement())

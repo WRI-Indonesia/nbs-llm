@@ -83,7 +83,6 @@ export async function GET() {
     })
 
     // Add to queue with the same jobId (so control endpoints can find it)
-    console.log(`Adding indexing job ${job.id} to queue`)
     const indexQueue = await getIndexQueue()
     const queuedJob = await indexQueue.add(
       'process-indexing',
@@ -97,7 +96,6 @@ export async function GET() {
       }
     )
 
-    console.log(`Indexing job queued: dbId=${job.id} queueId=${queuedJob.id} totalFiles=${pdfCount}`)
 
     return NextResponse.json({
       success: true,

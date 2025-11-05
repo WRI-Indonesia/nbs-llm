@@ -38,8 +38,7 @@ export async function POST(request: NextRequest) {
       projectId,
       timestamp = new Date(),
       use_hybrid: use_hybrid_raw,
-      hybrid_alpha: hybrid_alpha_raw,
-      location = { district: [], province: [] }
+      hybrid_alpha: hybrid_alpha_raw
     } = body
 
     // Priority: request param > user config > env var fallback

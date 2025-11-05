@@ -65,7 +65,7 @@ async function main() {
     summarizationModelEndpoint: 'https://seallm.wri-indonesia.or.id/v1/chat/completions',
     summarizationModel: 'SeaLLMs/SeaLLM-7B-v2.5',
   }
-  const adminUser = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: {
       name: 'Admin User',

@@ -18,6 +18,9 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      "jest.config.js",
+      "*.config.{js,mjs,ts}",
+      "prisma/migrations/**",
     ],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",

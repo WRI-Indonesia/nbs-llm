@@ -216,20 +216,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Analyze relationships from FlowNode metadata (isPrimaryKey, isForeignKey, references)
-    console.log('Analyzing relationships from FlowNode metadata...')
     for (const node of project.nodes) {
       if (node.type === 'table' && node.data) {
         const nodeData = node.data as unknown as TableNodeData
         
         if (nodeData.table && nodeData.columns) {
-          console.log(`Processing table: ${nodeData.table}`)
-          
           // Find foreign key columns in this table
           const fkColumns = nodeData.columns.filter(col => col.isForeignKey && col.references)
-          console.log(`Found ${fkColumns.length} foreign key columns in ${nodeData.table}`)
           
           for (const fkCol of fkColumns) {
-            console.log(`FK Column: ${fkCol.name} -> ${fkCol.references?.table}`)
             
             if (fkCol.references?.table) {
               // Find the referenced table in our table definitions
@@ -247,12 +242,7 @@ export async function POST(request: NextRequest) {
                     targetColumn: pkColumn.name
                   }
                   relationships.push(relationship)
-                  console.log(`Added relationship: ${relationship.sourceTable}.${relationship.sourceColumn} -> ${relationship.targetTable}.${relationship.targetColumn}`)
-                } else {
-                  console.log(`No primary key found in referenced table: ${fkCol.references.table}`)
                 }
-              } else {
-                console.log(`Referenced table not found: ${fkCol.references.table}`)
               }
             }
           }
@@ -260,7 +250,6 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    console.log(`Total relationships detected: ${relationships.length}`)
 
     // Generate SQL schema
     const schemaName = projectId.replace(/[^a-zA-Z0-9_]/g, '_') // Sanitize schema name
@@ -268,12 +257,10 @@ export async function POST(request: NextRequest) {
     
     if (useOpenAI) {
       // Use OpenAI to generate optimized schema
-      console.log('Generating schema with OpenAI...')
       const openAISqlStatements = await generateSchemaWithOpenAI(tableDefinitions, relationships)
       if (openAISqlStatements.length > 0) {
         sqlStatements = openAISqlStatements
       } else {
-        console.log('OpenAI generation failed, falling back to manual generation')
         sqlStatements = generateManualSchema(schemaName, tableDefinitions, relationships)
       }
     } else {

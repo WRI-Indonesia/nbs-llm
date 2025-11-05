@@ -192,7 +192,8 @@ export async function processIndexingJob(options: ProcessJobOptions): Promise<{
 
     // Load user chunking config
     const userId = existingJob.startedBy
-    const userConfig = await (prisma as any).config?.findUnique({ where: { userId } }).catch(() => null)
+    const user = await prisma.user.findUnique({ where: { id: userId } }).catch(() => null)
+    const userConfig = (user?.config as any) || {}
     const chunking: ChunkingConfig = {
       chunkSize: Math.max(200, Math.min(8000, userConfig?.chunkSize ?? 1000)),
       overlap: Math.max(0, Math.min(4000, userConfig?.overlap ?? 200)),

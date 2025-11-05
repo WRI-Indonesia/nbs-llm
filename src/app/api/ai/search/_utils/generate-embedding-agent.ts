@@ -3,11 +3,12 @@ import OpenAI from 'openai'
 /**
  * Generates embedding for the search query using OpenAI
  */
-export async function generateQueryEmbedding(query: string): Promise<number[]> {
+export async function generateQueryEmbedding(query: string, model?: string): Promise<number[]> {
     try {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+        const embeddingModel = model ?? process.env.EMBEDDING_AGENT_MODEL ?? "text-embedding-3-large"
         const response = await openai.embeddings.create({
-            model: process.env.EMBEDDING_AGENT_MODEL ?? "text-embedding-3-large",
+            model: embeddingModel,
             input: query,
         })
 

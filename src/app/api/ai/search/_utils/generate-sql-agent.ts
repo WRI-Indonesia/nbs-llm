@@ -15,7 +15,7 @@ export type SQLGenResult = {
 /**
  * Generates SQL query using OpenAI based on relevant documents
  */
-export async function generateSQLQuery(query: string, relevantDocs: string[]): Promise<SQLGenResult> {
+export async function generateSQLQuery(query: string, relevantDocs: string[], model?: string): Promise<SQLGenResult> {
     try {
         const text = relevantDocs.map(doc => `- ${doc}`).join('\n');
 
@@ -69,8 +69,9 @@ Instructions:
 SQL Query:`
 
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+        const sqlModel = model ?? process.env.SQL_GENERATOR_AGENT_MODEL ?? "gpt-4o"
         const completion = await openai.chat.completions.create({
-            model: process.env.SQL_GENERATOR_AGENT_MODEL ?? "gpt-4o",
+            model: sqlModel,
             messages: [
                 {
                     role: "system",

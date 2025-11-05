@@ -37,7 +37,6 @@ export async function addIndexingLog(
 export function createIndexingLogger(jobId: string) {
   return {
     log: async (message: string) => {
-      console.log(`[job:${jobId}]`, message)
       await addIndexingLog(jobId, 'log', message)
     },
     info: async (message: string) => {

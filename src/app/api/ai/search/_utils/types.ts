@@ -28,6 +28,7 @@ export interface SearchRequest {
     }
     use_hybrid?: boolean  // Enable hybrid search (default: true)
     hybrid_alpha?: number  // Weight for vector search (0.0 = only keyword, 1.0 = only vector, default: 0.7)
+    storeInDB?: boolean  // Whether to store chat history and memory in database (default: true)
 }
 
 export type SumUsage = { prompt: number; completion: number; total: number; source: 'measured' | 'estimated' }

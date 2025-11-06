@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useChat } from "../_hooks/useChat"
 import { useMemo } from "react"
+import { NodeDocMatch } from "@/app/api/ai/search/_utils/types"
 
 export function RagNodePopover({ id }: { id?: string }) {
   const { messages } = useChat()
@@ -16,9 +17,7 @@ export function RagNodePopover({ id }: { id?: string }) {
   const docs = useMemo(() => {
     try {
       const raw = message?.ragNodeDocuments
-      if (!raw) return []
-      const parsed = JSON.parse(raw as string)
-      return Array.isArray(parsed) ? parsed : []
+      return Array.isArray(raw) ? raw as NodeDocMatch[] : []
     } catch {
       return []
     }

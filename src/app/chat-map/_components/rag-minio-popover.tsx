@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useChat } from "../_hooks/useChat"
 import { useMemo } from "react"
+import { MinioDocMatch } from "@/app/api/ai/search/_utils/types"
 
 export function RagMinioPopover({ id }: { id?: string }) {
   const { messages } = useChat()
@@ -17,9 +18,7 @@ export function RagMinioPopover({ id }: { id?: string }) {
   const docs = useMemo(() => {
     try {
       const raw = message?.ragMinioDocuments
-      if (!raw) return []
-      const parsed = JSON.parse(raw as string)
-      return Array.isArray(parsed) ? parsed : []
+      return Array.isArray(raw) ? raw as MinioDocMatch[] : []
     } catch {
       return []
     }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isAdmin } from '@/lib/auth'
 import type { TableNodeData, Column } from '@/types/table-nodes'
-import { generateQueryEmbedding } from '../search/_utils/generate-embedding-agent'
+import { EmbeddingAgent } from '../search/_agents'
 
 /* ===================== Helpers ===================== */
 
@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
 
     // Generate new RAG docs for table nodes
     const tableNodes = project.nodes.filter((node: any) => node.type === 'table')
+    const embeddingAgent = new EmbeddingAgent()
     const generatedRagDocs: Array<{
       id: number
       nodeId: string
@@ -138,7 +139,8 @@ export async function GET(request: NextRequest) {
         // 1) Table-level doc
         try {
           const tableText = generateTableRagText(tableData)
-          const tableEmbedding = await generateQueryEmbedding(tableText)
+          const tableEmbeddingResult = await embeddingAgent.execute(tableText)
+          const tableEmbedding = tableEmbeddingResult.embedding
 
           const tableRagDoc = await insertNodeDocRaw(node.id, tableText, JSON.stringify(tableEmbedding))
 
@@ -161,7 +163,8 @@ export async function GET(request: NextRequest) {
         for (const column of validatedColumns) {
           try {
             const text = generateColumnRagText(tableData, column)
-            const embedding = await generateQueryEmbedding(text)
+            const embeddingResult = await embeddingAgent.execute(text)
+            const embedding = embeddingResult.embedding
 
             const ragDoc = await insertNodeDocRaw(node.id, text, JSON.stringify(embedding))
 

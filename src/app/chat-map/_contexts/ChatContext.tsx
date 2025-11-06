@@ -190,18 +190,19 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     setError(null)
 
     setMessages(prev => [...prev, {
-      id: crypto.randomUUID(),
-      role: 'user',
-      projectId,
-      userId: '',
-      content: query,
-      sqlQuery: null,
-      ragNodeDocuments: null,
-      ragMinioDocuments: null,
-      improvedPrompt: null,
-      data: null,
-      timestamp: new Date()
-    }])
+        id: crypto.randomUUID(),
+        role: 'user',
+        projectId,
+        userId: '',
+        content: query,
+        sqlQuery: null,
+        ragNodeDocuments: null,
+        ragMinioDocuments: null,
+        improvedPrompt: null,
+        data: null,
+        timestamp: new Date()
+      } as Partial<ChatHistory> as ChatHistory,
+    ])
 
     try {
       const searchRequest: SearchRequest = {

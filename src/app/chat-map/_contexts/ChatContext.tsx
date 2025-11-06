@@ -200,6 +200,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       ragMinioDocuments: null,
       improvedPrompt: null,
       data: null,
+      tokenUsage: null,
+      tokenCost: null,
       timestamp: new Date()
     }])
 

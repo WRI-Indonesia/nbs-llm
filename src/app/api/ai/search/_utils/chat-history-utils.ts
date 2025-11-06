@@ -65,8 +65,8 @@ export async function saveChatHistoryToDB(chatHistory: SaveChatHistoryInput): Pr
         ragMinioDocuments: chatHistory.ragMinioDocuments ? (typeof chatHistory.ragMinioDocuments === 'string' ? JSON.parse(chatHistory.ragMinioDocuments) : chatHistory.ragMinioDocuments) : undefined,
         ragNodeDocuments: chatHistory.ragNodeDocuments ? (typeof chatHistory.ragNodeDocuments === 'string' ? JSON.parse(chatHistory.ragNodeDocuments) : chatHistory.ragNodeDocuments) : undefined,
         improvedPrompt: chatHistory.improvedPrompt || null,
-        tokenUsage: chatHistory.tokenUsage ? (typeof chatHistory.tokenUsage === 'string' ? JSON.parse(chatHistory.tokenUsage) : chatHistory.tokenUsage) : undefined,
-        tokenCost: chatHistory.tokenCost ? (typeof chatHistory.tokenCost === 'string' ? JSON.parse(chatHistory.tokenCost) : chatHistory.tokenCost) : undefined,
+        tokenUsage: chatHistory.tokenUsage ? (typeof chatHistory.tokenUsage === 'string' ? JSON.parse(chatHistory.tokenUsage) : chatHistory.tokenUsage) : chatHistory.tokenUsage,
+        tokenCost: chatHistory.tokenCost ? (typeof chatHistory.tokenCost === 'string' ? JSON.parse(chatHistory.tokenCost) : chatHistory.tokenCost) : chatHistory.tokenCost,
         timestamp: new Date(chatHistory.timestamp || new Date().toISOString())
       } as any
     })

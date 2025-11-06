@@ -13,6 +13,7 @@ import {
   createUpdateTextSearchVectorFunction,
   createTextSearchTriggers,
 } from './trigger.ts'
+import { UserConfig } from '@/types/user-config.ts'
 
 const prisma = new PrismaClient()
 
@@ -44,7 +45,7 @@ async function main() {
 
   console.log('👤 Upserting admin user...')
   const hashedPassword = await bcrypt.hash('admin123', 12)
-  const defaultConfig = {
+  const defaultConfig: UserConfig = {
     chunkSize: 1000,
     overlap: 200,
     topK: 10,
@@ -72,14 +73,14 @@ async function main() {
       emailVerified: new Date(),
       password: hashedPassword,
       role: 'ADMIN',
-      config: defaultConfig,
+      config: defaultConfig as any,
     },
     create: {
       name: 'Admin User',
       email: 'admin@example.com',
       password: hashedPassword,
       role: 'ADMIN',
-      config: defaultConfig,
+      config: defaultConfig as any,
     },
   })
 
@@ -109,24 +110,24 @@ async function main() {
 
     const sampleNode = existingNode
       ? await prisma.flowNode.update({
-          where: { id: existingNode.id },
-          data: {
-            projectId: flowProject.id,
-            type: node.type as string,
-            position: node.position,
-            data: node.data as any,
-          },
-        })
+        where: { id: existingNode.id },
+        data: {
+          projectId: flowProject.id,
+          type: node.type as string,
+          position: node.position,
+          data: node.data as any,
+        },
+      })
       : await prisma.flowNode.create({
-          data: {
-            id: node.id,
-            projectId: flowProject.id,
-            nodeId: node.id,
-            data: node.data as any,
-            type: node.type as string,
-            position: node.position,
-          },
-        })
+        data: {
+          id: node.id,
+          projectId: flowProject.id,
+          nodeId: node.id,
+          data: node.data as any,
+          type: node.type as string,
+          position: node.position,
+        },
+      })
     console.log(`Upserted sample node: ${sampleNode.nodeId}`)
   }
 }

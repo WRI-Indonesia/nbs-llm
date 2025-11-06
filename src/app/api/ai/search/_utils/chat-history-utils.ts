@@ -43,6 +43,17 @@ type SaveChatHistoryInput = {
 
 export async function saveChatHistoryToDB(chatHistory: SaveChatHistoryInput): Promise<void> {
   try {
+    // Verify user exists before attempting to save
+    const userExists = await prisma.user.findUnique({
+      where: { id: chatHistory.userId },
+      select: { id: true }
+    })
+    
+    if (!userExists) {
+      console.error(`Cannot save chat history: User ${chatHistory.userId} does not exist in database`)
+      return
+    }
+
     await prisma.chatHistory.create({
       data: {
         userId: chatHistory.userId,
@@ -50,16 +61,22 @@ export async function saveChatHistoryToDB(chatHistory: SaveChatHistoryInput): Pr
         role: chatHistory.role,
         content: chatHistory.content,
         sqlQuery: chatHistory.sqlQuery || null,
-        data: chatHistory.data ? JSON.stringify(chatHistory.data) : undefined,
-        ragMinioDocuments: chatHistory.ragMinioDocuments ? JSON.stringify(chatHistory.ragMinioDocuments) : undefined,
-        ragNodeDocuments: chatHistory.ragNodeDocuments ? JSON.stringify(chatHistory.ragNodeDocuments) : undefined,
+        data: chatHistory.data ? (typeof chatHistory.data === 'string' ? JSON.parse(chatHistory.data) : chatHistory.data) : undefined,
+        ragMinioDocuments: chatHistory.ragMinioDocuments ? (typeof chatHistory.ragMinioDocuments === 'string' ? JSON.parse(chatHistory.ragMinioDocuments) : chatHistory.ragMinioDocuments) : undefined,
+        ragNodeDocuments: chatHistory.ragNodeDocuments ? (typeof chatHistory.ragNodeDocuments === 'string' ? JSON.parse(chatHistory.ragNodeDocuments) : chatHistory.ragNodeDocuments) : undefined,
         improvedPrompt: chatHistory.improvedPrompt || null,
-        tokenUsage: chatHistory.tokenUsage ? chatHistory.tokenUsage : undefined,
-        tokenCost: chatHistory.tokenCost ? chatHistory.tokenCost : undefined,
+        tokenUsage: chatHistory.tokenUsage ? (typeof chatHistory.tokenUsage === 'string' ? JSON.parse(chatHistory.tokenUsage) : chatHistory.tokenUsage) : undefined,
+        tokenCost: chatHistory.tokenCost ? (typeof chatHistory.tokenCost === 'string' ? JSON.parse(chatHistory.tokenCost) : chatHistory.tokenCost) : undefined,
         timestamp: new Date(chatHistory.timestamp || new Date().toISOString())
-      }
+      } as any
     })
-  } catch (error) {
-    console.error('Error saving chat history:', error)
+  } catch (error: any) {
+    // Provide more specific error messages
+    if (error?.code === 'P2003') {
+      console.error(`Error saving chat history: Foreign key constraint violation. User ${chatHistory.userId} or project ${chatHistory.projectId} does not exist.`)
+    } else {
+      console.error('Error saving chat history:', error)
+    }
+    // Don't throw - allow the API to continue even if chat history saving fails
   }
 }

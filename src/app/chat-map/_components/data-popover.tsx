@@ -28,10 +28,9 @@ export function DataPopover({ id }: { id?: string }) {
 
   // Parse once: MUST be a string of array of objects
   const rows = useMemo<Record<string, unknown>[]>(() => {
-    if (!message?.data || typeof message.data !== "string") return []
     try {
-      const parsed = JSON.parse(message.data)
-      return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : []
+      const data = message?.data as Record<string, unknown>[]
+      return Array.isArray(data) ? (data as Record<string, unknown>[]) : []
     } catch {
       return []
     }

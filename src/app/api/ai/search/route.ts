@@ -13,7 +13,7 @@ import { generateSQLQuery } from './_utils/generate-sql-agent'
 import { executeSQLQuery } from './_utils/sql-utils'
 import { rerankDocuments } from './_utils/rerank'
 import { generateAnswer } from './_utils/summarization-agent'
-import { cacheGetOrSet, sha256 } from './_utils/cache'
+import { cacheGetOrSet, cacheGet, cacheSet, sha256 } from './_utils/cache'
 import { saveSemanticMemory, retrieveEpisodicMemory, logProcedure } from './_utils/memory'
 import { costUsdFor } from './_utils/pricing'
 
@@ -141,6 +141,39 @@ export async function POST(request: NextRequest) {
     })
     const embeddingStr = JSON.stringify(queryEmbedding);
 
+    // -------------------- Semantic reuse (recent queries) --------------------
+    function cosineSim(a: number[], b: number[]): number {
+      let dot = 0, na = 0, nb = 0
+      const len = Math.min(a.length, b.length)
+      for (let i = 0; i < len; i++) { const x = a[i] || 0, y = b[i] || 0; dot += x*y; na += x*x; nb += y*y }
+      const denom = Math.sqrt(na) * Math.sqrt(nb)
+      return denom === 0 ? 0 : dot / denom
+    }
+    type RecentEntry = { emb: number[]; sql?: string; data?: any[]; sum?: { text: string; usage?: any }; ts: number }
+    const RECENT_KEY = `recentq:v1:${projectId}`
+    const REUSE_SIM = Number(process.env.SEMANTIC_REUSE_SIM ?? 0.93)
+    const RECENT_TTL = Number(process.env.RECENT_QUERIES_TTL ?? 60 * 60 * 6)
+    const RECENT_MAX = Number(process.env.RECENT_QUERIES_MAX_SIZE ?? 20)
+    try {
+      const list = (await cacheGet<RecentEntry[]>(RECENT_KEY)) || []
+      let best: RecentEntry | null = null
+      let bestSim = 0
+      for (const r of list) {
+        if (!Array.isArray(r.emb)) continue
+        const sim = cosineSim(queryEmbedding as number[], r.emb)
+        if (sim > bestSim) { bestSim = sim; best = r }
+      }
+      if (best && bestSim >= REUSE_SIM && best.sum?.text) {
+        const embTokens = Math.ceil(newQuery.length / 4)
+        const embUsage = { prompt: embTokens, completion: 0, total: embTokens, source: 'estimated' as const }
+        const embeddingModel = userConfig.embeddingAgentModel ?? process.env.EMBEDDING_AGENT_MODEL
+        const embUsd = costUsdFor(embeddingModel, embTokens, 0)
+        const tokenUsage = { embedding: embUsage, sql: null, summarize: { prompt: 0, completion: 0, total: 0, source: 'estimated' as const }, total: embTokens }
+        const tokenCost = { embeddingUsd: embUsd, sqlUsd: 0, summarizeUsd: 0, totalUsd: embUsd }
+        return NextResponse.json({ status: 'success', reused: true, answer: best.sum.text, sqlQuery: best.sql ?? null, data: best.data ?? [], tokenUsage, tokenCost })
+      }
+    } catch {}
+
     // Episodic memory: recent chat snippets
     const episodicSnippets: string[] = MEM_EPISODIC_ENABLED
       ? await retrieveEpisodicMemory({ userId: user.id, projectId, topK: EPISODIC_TOPK })
@@ -150,19 +183,61 @@ export async function POST(request: NextRequest) {
     // Priority: user config > env var fallback
     const TTL_SEMRETR = userConfig.cacheTtlSemretr ?? Number(process.env.CACHE_TTL_SEMRETR ?? 60 * 30)
     const semTopK = userConfig.semanticTopK ?? Number(process.env.SEMANTIC_TOPK ?? 8)
-    const semKey = `semretr:v1:${projectId}:${sha256(newQuery)}:${semTopK}`
-    const semanticSnippets = await cacheGetOrSet(semKey, TTL_SEMRETR, async () => {
+    const semKey = `semretr:v2:${projectId}:${sha256(newQuery)}:${semTopK}`
+    const semanticRows = await cacheGetOrSet(semKey, TTL_SEMRETR, async () => {
       try {
-        const rows = await prisma.$queryRawUnsafe<{ content: string }[]>(
-          `SELECT content FROM "mem_semantic" WHERE project_id = $1 ORDER BY embedding <-> ($2)::vector(3072) LIMIT ${semTopK}`,
+        const limit = Math.max(semTopK * 3, semTopK)
+        const rows = await prisma.$queryRawUnsafe<{ id: string, content: string, sim: number }[]>(
+          `SELECT id, content, 1 - (embedding <-> ($2)::vector(3072)) AS sim
+           FROM "mem_semantic"
+           WHERE project_id = $1
+           ORDER BY embedding <-> ($2)::vector(3072)
+           LIMIT ${limit}`,
           projectId,
           JSON.stringify(queryEmbedding)
         )
-        return rows.map(r => r.content)
+        return rows
       } catch {
-        return [] as string[]
+        return [] as { id: string, content: string, sim: number }[]
       }
     })
+
+    // Composite score + simple MMR over semanticRows
+    const queryTokens = new Set((newQuery.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length > 2))
+    function jaccard(a: Set<string>, b: Set<string>): number {
+      let inter = 0
+      for (const t of a) if (b.has(t)) inter++
+      const union = a.size + b.size - inter
+      return union === 0 ? 0 : inter / union
+    }
+    const scored = semanticRows.map(r => {
+      const toks = new Set((r.content.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length > 2))
+      const lex = jaccard(queryTokens, toks)
+      const score = 0.7 * (Number(r.sim || 0)) + 0.3 * lex
+      return { ...r, toks, lex, score }
+    }).sort((a,b) => b.score - a.score)
+
+    const mmrLambda = 0.5
+    const selected: { id: string, content: string }[] = []
+    const selectedToks: Set<string>[] = []
+    for (const cand of scored) {
+      const diversityPenalty = selectedToks.length
+        ? Math.max(...selectedToks.map(st => jaccard(st, cand.toks)))
+        : 0
+      const mmrScore = cand.score - mmrLambda * diversityPenalty
+      ;(cand as any).mmrScore = mmrScore
+    }
+    scored.sort((a,b) => (b as any).mmrScore - (a as any).mmrScore)
+    for (const cand of scored) {
+      if (selected.length >= semTopK) break
+      // Avoid near-duplicate by lexical Jaccard
+      const tooClose = selectedToks.some(st => jaccard(st, cand.toks) > 0.85)
+      if (tooClose) continue
+      selected.push({ id: cand.id, content: cand.content })
+      selectedToks.push(cand.toks)
+    }
+    const semanticSnippets = selected.map(s => s.content)
+    const chosenSemanticIds = selected.map(s => s.id)
 
     // Use hybrid search if enabled, otherwise fall back to pure vector search
     let relevantNodeDocs: NodeDocMatch[]
@@ -254,12 +329,24 @@ export async function POST(request: NextRequest) {
         relevantNodeDocsText = candidateDocs.map(c => c.text)
       }
 
-      // Prepend episodic (chat history) and semantic snippets to boost grounding
+      // Build a structured memory pack for explicit reasoning
+      const constraints: string[] = []
+      if (/compare|versus|vs\b/i.test(newQuery)) constraints.push('Task: comparison requested')
+      const facts = semanticSnippets.slice(0, semTopK).map(s => `- ${s.trim().slice(0, 220)}`)
+      const memoryPack = [
+        constraints.length ? 'CONSTRAINTS:' : '',
+        ...constraints,
+        'MEM-FACTS:',
+        ...facts
+      ].filter(Boolean).join('\n')
+
+      // Prepend memory pack, episodic, and semantic snippets to boost grounding
       relevantNodeDocsText = [
+        memoryPack,
         ...episodicSnippets,
         ...semanticSnippets,
         ...relevantNodeDocsText
-      ].slice(0, Math.min(24, episodicSnippets.length + semanticSnippets.length + relevantNodeDocsText.length))
+      ].slice(0, Math.min(28, 1 + episodicSnippets.length + semanticSnippets.length + relevantNodeDocsText.length))
       /**
       * GENERATE SQL AGENT
       * Generate SQL query using the relevant documents
@@ -330,7 +417,8 @@ export async function POST(request: NextRequest) {
      * Combine improved user query, data from excecuted SQL, and context from RAG Minio
      */
     const ctxDocs = [
-      // Use MinIO RAG docs plus memory snippets as extra context
+      // Use memory pack and snippets plus MinIO docs as extra context
+      ...([/* memoryPack repeated for summarizer scope */].concat([])),
       ...relevantMinioDocs.map((r) => r.document_text),
       ...semanticSnippets,
       ...episodicSnippets
@@ -352,8 +440,13 @@ export async function POST(request: NextRequest) {
 
     // Semantic memory write-back: store compact fact for future retrieval
     if (MEM_SEMANTIC_WRITE_ENABLED) {
-      const toStore = `${newQuery} — ${answer.slice(0, 1500)}`
-      await saveSemanticMemory({ userId: user.id, projectId, content: toStore, tags: ['answer','auto'] })
+      // Basic entity tags from query
+      const tags: string[] = ['episode','auto']
+      if (/province|provinsi/i.test(newQuery)) tags.push('province')
+      if (/district|kabupaten|kota/i.test(newQuery)) tags.push('district')
+      if (/species|spesies/i.test(newQuery)) tags.push('species')
+      const toStore = `Episode: ${newQuery.slice(0, 160)} — ${answer.slice(0, 1200)}`
+      await saveSemanticMemory({ userId: user.id, projectId, content: toStore, tags })
     }
 
     // Compute usage+cost for persistence
@@ -399,6 +492,7 @@ export async function POST(request: NextRequest) {
           top_k,
           rerankEnabled: userConfig.rerankEnabled ?? (process.env.RERANK_ENABLED ?? 'true').toLowerCase() !== 'false',
           semanticSnippets: semanticSnippets.length,
+          chosenSemanticIds,
           episodicSnippets: episodicSnippets.length,
           nodeDocs: (typeof relevantNodeDocs !== 'undefined') ? relevantNodeDocs.length : 0,
           minioDocs: (typeof relevantMinioDocs !== 'undefined') ? relevantMinioDocs.length : 0,

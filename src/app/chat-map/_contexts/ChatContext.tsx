@@ -14,7 +14,7 @@ import { Style, Stroke, Fill } from 'ol/style'
 import { processZipFile, addShapefileToMap, ShapefileData } from '../_utils/shapefile-utils'
 import type { SearchRequest } from "@/app/api/ai/search/_utils/types"
 import { ChatHistory } from "@prisma/client"
-import { v4 as uuidv4 } from 'uuid';
+//
 
 
 interface ClearResponse {
@@ -190,7 +190,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     setError(null)
 
     setMessages(prev => [...prev, {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       role: 'user',
       projectId,
       userId: '',
